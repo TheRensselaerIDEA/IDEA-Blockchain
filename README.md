@@ -1,2 +1,7 @@
 # IDEA-Blockchain
-IDEA Blockchain investigations, including DeFi research
+IDEA Blockchain investigations, including DeFi research.
+
+## Contents
+DeFiResearch: Folder containing files for decentralized finance research.
+
+OldResearch: Folder containing files for all work before decentralized finance research, including research on blockchain tokens, Ethereum ERC20 tokens, and initial coin offerings (ICO's)
