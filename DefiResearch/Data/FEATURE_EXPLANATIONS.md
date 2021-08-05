@@ -1,4 +1,6 @@
-Deposits: User deposits currency in to a lending pool to accure interest
+# Feature Explanations
+
+## Deposits: User deposits currency in to a lending pool to accure interest
 
 -type: type of transaction ("redeem" for redeems)
 
@@ -21,7 +23,7 @@ Deposits: User deposits currency in to a lending pool to accure interest
 -amountUSD: amount being borrowed, in USD *reservePriceUSD X amount*
 
 
-Redeems: User removes deposit from lending pool
+## Redeems: User removes deposit from lending pool
 
 -type: type of transaction ("redeem" for redeems)
 
@@ -43,7 +45,7 @@ Redeems: User removes deposit from lending pool
 
 -amountUSD: amount being borrowed, in USD *reservePriceUSD X amount*
 
-Borrows: User borrows a currency from a lending pool, which can be repaid at any time (if the user has the required collateral)
+## Borrows: User borrows a currency from a lending pool, which can be repaid at any time (if the user has the required collateral)
 
 -type: type of transaction ("borrow" for borrows)
 
@@ -69,7 +71,7 @@ Borrows: User borrows a currency from a lending pool, which can be repaid at any
 
 -borrowRateMode: whether the loan has a variable or stable interest rate
 
-Repays: User repays money borrowed to a lending pool
+## Repays: User repays money borrowed to a lending pool
 
 -type: type of transaction ("borrow" for borrows)
 
@@ -91,7 +93,7 @@ Repays: User repays money borrowed to a lending pool
 
 -amountUSD: amount being repaid, in USD *reservePriceUSD X amount*
 
-Liquidations: User's loan is forcibly repaid when they no longer have the required collateral to maintain the loan
+## Liquidations: User's loan is forcibly repaid when they no longer have the required collateral to maintain the loan
 
 -type: type of transaction ("liquidation" for liquidations)
 
@@ -121,7 +123,7 @@ Liquidations: User's loan is forcibly repaid when they no longer have the requir
 
 -amountUSDCollateral: amount being of collateral being repaid, in USD *reservePriceUSDCollateral X collateralAmount*
 
-Swaps: User changes deposit from one type of interest rate to another
+## Swaps: User changes deposit from one type of interest rate to another
 
 -type: type of transaction ("swap" for swaps)
 
