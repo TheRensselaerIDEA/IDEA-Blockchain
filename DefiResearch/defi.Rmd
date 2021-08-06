@@ -1,0 +1,64 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# DefiResearch
+
+```{r}
+library(ggplot2)
+library(RColorBrewer)
+library(beeswarm)
+library(tidyverse)
+library(ggbeeswarm)
+```
+
+
+We begin by loading in the data to a csv file.
+
+```{r}
+df<-read_csv(file='transactions.csv')
+head(df)
+```
+```{r}
+colors = brewer.pal(6,"Set2")
+```
+
+```{r}
+barplot(table(df$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
+```
+```{r}
+boxplot(amountUSD~type,data=df,outline=FALSE,col=colors,main="Transaction Amounts",xlab="Type",ylab="Amount (USD)")
+```
+
+
+```{r,fig.width=16,fig.height=8}
+#get 3 random users that have between 100 and 500 transactions
+users<-vector(length=3)
+count<-0
+while(count<=3){
+  success<-FALSE
+  while(!success){
+    #get random user
+    ruser<-sample(df$user,1)
+    
+    #check for valid number of transactions
+    length<-nrow(filter(df,user==ruser))
+    if (length>100 && length<300){
+      users[count]=ruser
+      success<-TRUE
+      count<-count+1
+    }
+  }
+}
+df.rusers<-filter(df, user %in%users)
+
+#create plot
+ggplot(df.rusers,aes(user, timestamp,color=type)) + 
+        geom_beeswarm(cex=1)+
+        coord_flip()+
+        ggtitle("User Transaction History")
+
+```
+
+
