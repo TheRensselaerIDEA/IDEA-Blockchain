@@ -1,0 +1,112 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+
+```{r}
+#import libraries
+library(ggplot2)
+library(RColorBrewer)
+library(beeswarm)
+library(tidyverse)
+library(ggbeeswarm)
+library(foreach)
+library(doParallel)
+```
+
+We begin by loading the csv file in to a dataframe.
+
+```{r}
+#load in csv file to data frame
+df<-read_csv(file='transactions.csv')
+df
+```
+We reformat the dataframe so that each row represents a user, and the columns represent a summarization of the user's transaction history. 
+
+```{r}
+#group by user and get time of user's first and last transaction, as well as number of transactions
+df.users<- df%>%group_by(user)%>%
+  summarise(timefirst=min(timestamp), timelast=max(timestamp), N=n())
+
+#get the time the user has been active
+df.users$timeactive<-df.users$timelast-df.users$timefirst
+
+#get user's transaction information
+for(Type in c(unique(df$type))){
+  #filter for only transactions of certain type
+  df.type <-filter(df%>%group_by(user)%>%
+                     count(type),type==Type)
+  
+  #add means of each transaction type
+  if(Type!="liquidation" || Type!="swap"){
+    df.mean<-filter(df,type==Type)%>%
+      group_by(user)%>%
+      summarise(Mean=mean(amountUSD))
+    colnames(df.mean)[2]<-paste('mean_',Type,sep='')
+    df.users<-merge(x=df.users,y=df.mean,by="user",all.x=TRUE)
+  }
+  
+  #add counts of transaction types to df
+  ntypes<-paste("n",Type,sep='')
+  colnames(df.type)[3]<-ntypes
+  df.users<-merge(x=df.users,y=select(df.type,user,ntypes),by="user",all.x=TRUE)
+  
+  #get proportion of transaction types and weekly number of transaction type
+  df.users[paste("prop_",Type,sep='')]<-df.users[ntypes]/((df.users$N)+1)
+  df.users[paste("weekly_",Type,sep='')]<-df.users[ntypes]/(((df.users$timeactive)+1)/(3600*24*7))
+}
+
+#get user's currency information
+for (currency in c(unique(df$reserve))){
+  
+  if(is.na(currency))next
+  #filter for only transactions with specific currency
+  df.curr <-filter(df%>%group_by(user)%>%
+                     count(reserve),reserve==currency)
+  
+  #add counts of transactions made with specific currency
+  colname<-paste("n",currency,sep='')
+  colnames(df.curr)[3]<-colname
+  df.users<-merge(x=df.users,y=select(df.curr,user,colname),by="user",all.x=TRUE)
+  
+  #get proportion of transactions made with this currency, and weekly number of transactions made with this currency
+  df.users[paste("prop",currency,sep='_')]=df.users[colname]/((df.users$N)+1)
+  df.users[paste("weekly",currency,sep='_')]=df.users[colname]/(((df.users$timeactive)+1)/(3600*24*7))
+}
+df.users
+```
+Next, we select only the columns we wish to cluster on.
+
+```{r}
+#subset only columns we wish to scale
+df.sub<-select(df.users,-c(user,timefirst,timelast,mean_swap,mean_liquidation))
+
+#replce misisng values as 0's
+df.sub<-df.sub%>%replace(is.na(.),0)
+```
+
+We scale the data to prepare for PCA.
+
+```{r}
+#scale data
+df.scaled<-df.sub%>%mutate_all(scale)
+df.scaled
+```
+
+Now, we perform PCA on the scaled data. 
+
+```{r}
+#perform pca on data
+my.pca<-prcomp(df.scaled,retx=TRUE) # Run PCA and save to my.pca
+
+#make scree plot
+plot(my.pca, type="line")
+
+```
+```{r}
+summary(df$amount)
+```
+
+

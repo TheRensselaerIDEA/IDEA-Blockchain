@@ -1,39 +1,62 @@
 ---
 title: "R Notebook"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
 ---
 
 # DefiResearch
 
 ```{r}
+#load libraries
 library(ggplot2)
 library(RColorBrewer)
 library(beeswarm)
 library(tidyverse)
 library(ggbeeswarm)
+library(xts)
 ```
 
 
-We begin by loading in the data to a csv file.
+We begin by loading in the data to a csv file. The dataset has over 400,000 rows, and 27 columns. 
 
 ```{r}
+#load csv file in to dataframe
 df<-read_csv(file='transactions.csv')
-head(df)
-```
-```{r}
-colors = brewer.pal(6,"Set2")
+df
 ```
 
+Next, we will examine the different types of transactions present in the data. We make a bar plot to visualize the number of each transaction types. Deposit is the most common type of transaction, whereas swaps are the most rare. 
+
 ```{r}
+#set color palette
+colors = brewer.pal(6,"Set2")
+
+#create barplot
 barplot(table(df$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
 ```
+
+
+Now, we will examine the amount of US dollars being used in the different types of transactions. We create box plots for the 4 types of transactions that have the amount feature associated with them, and visualize the distribution of that column for the different transactions. We can see that most transactions are completed with very little money. 
+
 ```{r}
+#create boxplot
 boxplot(amountUSD~type,data=df,outline=FALSE,col=colors,main="Transaction Amounts",xlab="Type",ylab="Amount (USD)")
 ```
 
+```{r}
+
+```
+
+
+Finally, we will examine the transaction history of different users. To do this, we will select 3 random users from the data who have completed between 100 and 300 transactions. Then, we create swarmplots displaying the different types of transactions those users made over time.
 
 ```{r,fig.width=16,fig.height=8}
-#get 3 random users that have between 100 and 500 transactions
+#set seed
+set.seed(1)
+
+#get 3 random users that have between 100 and 300 transactions
 users<-vector(length=3)
 count<-0
 while(count<=3){
@@ -53,12 +76,15 @@ while(count<=3){
 }
 df.rusers<-filter(df, user %in%users)
 
-#create plot
+#create swarmplot
 ggplot(df.rusers,aes(user, timestamp,color=type)) + 
         geom_beeswarm(cex=1)+
         coord_flip()+
         ggtitle("User Transaction History")
 
 ```
-
+```{r}
+df%>%group_by(reserve)
+filter(df,type=="liquidation")
+```
 
