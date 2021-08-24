@@ -18,6 +18,7 @@ library(ggbeeswarm)
 library(xts)
 ```
 
+# Prepare Transaction Data
 
 We begin by loading in the data to a csv file. The dataset has over 400,000 rows, and 27 columns. 
 
@@ -26,8 +27,9 @@ We begin by loading in the data to a csv file. The dataset has over 400,000 rows
 df<-read_csv(file='transactions.csv')
 df
 ```
+# Analyze Transaction Types
 
-Next, we will examine the different types of transactions present in the data. We make a bar plot to visualize the number of each transaction types. Deposit is the most common type of transaction, whereas swaps are the most rare. 
+Next, we will examine the different types of transactions present in the data. We make a bar plot to visualize the number of each transaction types. Deposit is the most common type of transaction, whereas swaps are the most rare.
 
 ```{r}
 #set color palette
@@ -36,6 +38,7 @@ colors = brewer.pal(6,"Set2")
 #create barplot
 barplot(table(df$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
 ```
+There are more deposits than borrows, because users often need to overcollateralize for loans. 
 
 
 Now, we will examine the amount of US dollars being used in the different types of transactions. We create box plots for the 4 types of transactions that have the amount feature associated with them, and visualize the distribution of that column for the different transactions. We can see that most transactions are completed with very little money. 
@@ -43,12 +46,16 @@ Now, we will examine the amount of US dollars being used in the different types 
 ```{r}
 #create boxplot
 boxplot(amountUSD~type,data=df,outline=FALSE,col=colors,main="Transaction Amounts",xlab="Type",ylab="Amount (USD)")
-```
 
+```
 ```{r}
-
+boxplot(log(amountUSD)~type,data=df,outline=FALSE,col=colors,main="Log Transaction Amounts",xlab="Type",ylab="Log Amount (USD)")
 ```
+There are many borrows and repays with high transactions amounts, but deposits and redeems have much lower transactions amounts.
 
+
+
+# Look at Sample User Transaction Histories 
 
 Finally, we will examine the transaction history of different users. To do this, we will select 3 random users from the data who have completed between 100 and 300 transactions. Then, we create swarmplots displaying the different types of transactions those users made over time.
 
@@ -77,14 +84,29 @@ while(count<=3){
 df.rusers<-filter(df, user %in%users)
 
 #create swarmplot
+
+#liquidations
+#borrow
+#deposit
+#redeem
+#repay
+#swap
+
 ggplot(df.rusers,aes(user, timestamp,color=type)) + 
         geom_beeswarm(cex=1)+
         coord_flip()+
         ggtitle("User Transaction History")
 
 ```
+Users have very different transactions patterns, which we will try to better understand. 
+
+# Analyze Individual Currencies (USDT)
+
+USDT is interesting because it has more borrows than deposits. This may be because it is a stable coin. 
+
 ```{r}
-df%>%group_by(reserve)
-filter(df,type=="liquidation")
+
+df.usd<-filter(df,reserve=="USDT")
+barplot(table(df.usd$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
 ```
 
