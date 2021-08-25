@@ -57,10 +57,10 @@ This notebook is broken into two main parts:
     * Part 2 is an introduction to the DeFi transaction dataset
 
 This R Notebook and its related R scripts provide a very basic introduction to an interesting **Decentralized Finance (DeFi) ** dataset. All data was obtained 
-by querying [The Graph](https://thegraph.com/) for 
-[AAVE transaction data](https://thegraph.com/explorer/subgraph?id=0x0d69090672c1e5a94e9aedfbc59558d18a78e1d3-0&view=Overview). For more information on AAVE see [the AAVE developer notes](https://docs.aave.com/developers/v/2.0/). The AAVE protocol is based on [Ethereum](https://ethereum.org/en/), an important cryptocurrency platform.
+by querying an API on [The Graph](https://thegraph.com/), an indexing protocol for querying networks like Ethereum, for transaction data based on  
+[the AAVE protocol](https://thegraph.com/explorer/subgraph?id=0x0d69090672c1e5a94e9aedfbc59558d18a78e1d3-0&view=Overview). For more information on AAVE see [the AAVE developer notes](https://docs.aave.com/developers/v/2.0/). The AAVE protocol is based on [Ethereum](https://ethereum.org/en/), an important cryptocurrency platform.
 
-The RPI github repository for all the code required for this notebook, including a snapshots of AAVE transaction and user data, can be found at:
+The RPI github repository for all the code required for this notebook, including a snapshots of AAVE transaction and user data, may be found at:
 
 * https://github.rpi.edu/DataINCITE/IDEA-Blockchain
 
@@ -154,9 +154,11 @@ Please also see this handy github "cheatsheet": https://education.github.com/git
 We begin by loading in the data to a csv file. The dataset has over 400,000 rows, and 27 columns. 
 
 ```{r}
-#load csv file in to dataframe
-df<-read_csv(file='transactions.csv')
-df
+#load Rds (binary version of csv file) into dataframe
+df<-read_rds('../Data/transactions.Rds')
+
+# Let's take a look
+head(df)
 ```
 ## Analyze Transaction Types
 
@@ -240,3 +242,29 @@ df.usd<-filter(df,reserve=="USDT")
 barplot(table(df.usd$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
 ```
 
+
+# APPENDIX: Accessing RStudio Server on the IDEA Cluster
+
+The IDEA Cluster provides five compute nodes (4x 48 cores, 1x 80 cores, 1x storage server)
+
+* The Cluster requires RCS credentials, enabled via registration in class
+    * email John Erickson for problems `erickj4@rpi.edu`
+* RStudio, Jupyter, MATLAB, GPUs (on two nodes); lots of storage and computes
+* Access via RPI physical network or VPN only
+
+RStudio GUI Access:
+
+* http://lp01.idea.rpi.edu/rstudio-ose/  or http://lp01.idea.rpi.edu/rstudio-ose-3/ (RStudio)
+* Linux terminal accessible from within RStudio "Terminal" or via ssh (below)
+
+Shared Data on Cluster:
+
+* Users enrolled in DAR have access to `/academics/MATP-4910-F21` 
+    * Usually DAR users will see a symbolic ("soft") link in their home directories
+    * If you do not, type the following in the **Terminal** via RStudio: `ln -s /academics/MATP-4910-F21/ MATP-4910-F21`
+* All idea_users have access to shared storage via `/data` ("data" in your home directories)
+    * You might wish to use this for data sharing in team projects...
+    * ...but we recommend using github for shared code development
+* Shell access to nodes: You must access "landing pad" first, then compute node:
+* `ssh your_rcs@lp01.idea.rpi.edu`  For example: `ssh erickj4@lp01.idea.rpi.edu`
+* Then, `ssh` to the desired compute node, e.g.: `ssh idea-node-02`
