@@ -5,6 +5,8 @@ author: "Data Analytics Research Instructors"
 date: "08/24/2021"
 output:
   html_document:
+    toc: true
+    number_sections: true
     df_print: paged
   pdf_document: default
 ---
