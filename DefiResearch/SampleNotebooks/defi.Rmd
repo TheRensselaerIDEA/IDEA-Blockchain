@@ -59,8 +59,7 @@ This notebook is broken into two main parts:
     * Part 2 is an introduction to the DeFi transaction dataset
 
 This R Notebook and its related R scripts provide a very basic introduction to an interesting **Decentralized Finance (DeFi) ** dataset. All data was obtained 
-by querying an API on [The Graph](https://thegraph.com/), an indexing protocol for querying networks like Ethereum, for transaction data based on  
-[the AAVE protocol](https://thegraph.com/explorer/subgraph?id=0x0d69090672c1e5a94e9aedfbc59558d18a78e1d3-0&view=Overview). For more information on AAVE see [the AAVE developer notes](https://docs.aave.com/developers/v/2.0/). The AAVE protocol is based on [Ethereum](https://ethereum.org/en/), an important cryptocurrency platform.
+by querying an API on [The Graph](https://thegraph.com/), an indexing protocol for querying networks like Ethereum, for transaction data based on [the AAVE protocol](https://thegraph.com/explorer/subgraph?id=0x0d69090672c1e5a94e9aedfbc59558d18a78e1d3-0&view=Overview). For more information on AAVE see [the AAVE developer notes](https://docs.aave.com/developers/v/2.0/). The AAVE protocol is based on [Ethereum](https://ethereum.org/en/), an important cryptocurrency platform.
 
 The RPI github repository for all the code required for this notebook, including a snapshots of AAVE transaction and user data, may be found at:
 
@@ -113,55 +112,76 @@ The recommended procedure for cloning and using this repository is as follows:
     * It is _critical_ that you include your RCS id in your branch id
 * Now in the RStudio Server UI, navigate to the `IDEA-Blockchain/DefiResearch/StudentNotebooks` directory via the **Files** panel (lower right panel)
     * Under the **More** menu, set this to be your R working directory
-* **REQUIRED FOR ASSIGMENT**: 
-    1. In RStudio, make a **copy*</b>** of `blockchain-notebook-f21.Rmd` file using a *new, original, descriptive* filename that **includes your RCS ID!**
-        * Open `blockchain-notebook-f21.Rmd`
-        * Save As... using new filename
-        * Example filename for user `erickj4`: `erickj4-assignment1-f21.Rmd` 
-    2. Edit your new notebook using RStudio and save
-        * Change the `title:` and `subtitle:` headers (at the top of the file)
-        * Change the `author:` 
-        * Change the `date:`
-        * Save your changes
-    3. Use the RStudio `Knit` command to create an HTML file; repeat as necessary
-        * Use the down arrow next to the word `Knit` and select **Knit to HTML**
-    4. In the Linux terminal, use `git add` to add each new file you want to add to the repository
-        * Type: `git add yourfilename.Rmd` 
-        * Type: `git add yourfilename.html` (created when you knitted)
-    5. When you're ready, in Linux commit your changes: 
-        * Type: `git commit -m "some comment"` where "some comment" is a useful comment describing your changes
-    6. Finally, push your commits to the RPI github repo
-        * Type: `git push origin dar-yourrcs` (where `dar-yourrcs` is the branch you've been working in) 
-    7. **REQUIRED:** On the RPI github, submit a pull request.
-        * In a web browser, navigate to https://github.rpi.edu/DataINCITE/IDEA-Blockchain
-        * In the branch selector drop-down (usually says "master"), select your branch
-        * Submit a pull request for your branch
+    * Setting the correct working directory is essential for interactive R use!
+
+### REQUIRED FOR ASSIGMENT 1
+
+1. In RStudio, make a **copy** of `blockchain-notebook-f21.Rmd` file using a *new, original, descriptive* filename that **includes your RCS ID!**
+    * Open `blockchain-notebook-f21.Rmd`
+    * **Save As...** using a new filename
+    * Example filename for user `erickj4`: `erickj4-assignment1-f21.Rmd` 
+2. Edit your new notebook using RStudio and save
+    * Change the `title:` and `subtitle:` headers (at the top of the file)
+    * Change the `author:` 
+    * Change the `date:`
+    * **Save** your changes
+3. Use the RStudio `Knit` command to create an HTML file; repeat as necessary
+    * Use the down arrow next to the word `Knit` and select **Knit to HTML**
+    * You may also knit to PDF...
+4. In the Linux terminal, use `git add` to add each new file you want to add to the repository
+    * Type: `git add yourfilename.Rmd` 
+    * Type: `git add yourfilename.html` (created when you knitted)
+    * Add your PDF if you also created one...
+5. When you're ready, in Linux commit your changes: 
+    * Type: `git commit -m "some comment"` where "some comment" is a useful comment describing your changes
+    * This commits your changes to your local repo, and sets the stage for your next operation.
+6. Finally, push your commits to the RPI github repo
+    * Type: `git push origin dar-yourrcs` (where `dar-yourrcs` is the branch you've been working in)
+    * Your changes are now safely on the RPI github. 
+7. **REQUIRED:** On the RPI github, submit a pull request.
+    * In a web browser, navigate to https://github.rpi.edu/DataINCITE/IDEA-Blockchain
+    * In the branch selector drop-down (by default says **master**), select your branch
+    * **Submit a pull request for your branch**
+    * One of the DAR instructors will merge your branch, and your new files will be added to the master branch of the repo.
 
 ### Confirm what you just did
 
 For this assignment you will be asked to confirm the following in LMS:
 
-    * The location of the github: _Type repository URL here_
-    * Your github ID: _Type your RCS ID here_
-    * The name of your new branch: _Type your new branch name here_
-    * The name of your new (copied) notebook: _Type your new notebook name here_
+   * The location of the github: _Type repository URL here_
+   * Your github ID: _Type your RCS ID here_
+   * The name of your new branch: _Type your new branch name here_
+   * The name of your new (copied) notebook: _Type your new notebook name here_
 
 Please also see this handy github "cheatsheet": https://education.github.com/git-cheat-sheet-education.pdf
 
 
-# Exploring a DeFi Transaction Dataset
+# Exploring a DeFi Transaction Dataset using AAVE
 
+## What is AAVE? 
+
+From the [developer site](https://docs.aave.com/developers/v/2.0/): _Aave is a decentralised non-custodial liquidity protocol where users can participate as depositors or borrowers. Depositors provide liquidity to the market to earn a passive income, while borrowers are able to borrow in an over-collateralised (perpetually) or under-collateralised (one-block liquidity) fashion...The (Aave) protocol is implemented as a set of smart contracts on top of the [Ethereum](https://ethereum.org/en/) blockchain. Smart contracts guarantee safety and do not require a middleman._
+
+For (much) more detail refer to the [AAVE Protocol V2.0 Whitepaper](https://github.com/aave/protocol-v2/blob/master/aave-v2-whitepaper.pdf)
+ 
 ## Prepare Transaction Data
 
-We begin by loading in the data to a csv file. The dataset has over 400,000 rows, and 27 columns. 
+We begin by loading our prepared AAVE transaction data into a dataframe. The dataset has over 400,000 rows, and 27 columns. 
+
+We are directly loading the dataframe from an Rds archive instead of a CSV file to conserve space. 
 
 ```{r}
 #load Rds (binary version of csv file) into dataframe
 df<-read_rds('../Data/transactions.Rds')
 
-# Let's take a look
+# Let's take a quick look 
 head(df)
+
+str(df)
+
+summary(df)
 ```
+
 ## Analyze Transaction Types
 
 Next, we will examine the different types of transactions present in the data. We make a bar plot to visualize the number of each transaction types. Deposit is the most common type of transaction, whereas swaps are the most rare.
