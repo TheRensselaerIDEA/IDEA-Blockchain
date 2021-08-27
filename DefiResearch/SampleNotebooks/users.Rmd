@@ -121,6 +121,9 @@ for(Type in c(unique(df$type))){
 
 df.users
 ```
+
+## Creating Clusters
+
 Next, we select only the columns we wish to cluster on.
 
 ```{r}
@@ -153,6 +156,8 @@ summary(my.pca)
 
 ncomps=5
 ```
+
+
 Next, we plot a heatmap to show the makeups of the principal components. 
 
 ```{r}
@@ -161,6 +166,7 @@ heatmap.2(V, main='Principal Components', cexRow=0.75, cexCol=0.75, scale="none"
 Colv= FALSE, Rowv=FALSE, tracecol=NA,density.info='none')
 
 ```
+
 Finally, we run the kmeans clustering algorithm on the data. We select the number of clusters euqal to the number of selected components. 
 
 ```{r}
@@ -172,6 +178,7 @@ km <-kmeans(pca.matrix, ncomps)
 #plot frequencies of each cluster
 barplot(table(km$cluster),main="Cluster Frequencies")
 ```
+
 Finally, we view the centers of the kmeans clusters.
 
 ```{r}
