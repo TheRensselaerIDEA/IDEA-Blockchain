@@ -1,29 +1,89 @@
 ---
-title: "R Notebook"
-output: html_notebook
+title: "DeFi Example Notebook: AAVE Users"
+subtitle: "AAVE Users Analysis"
+author: "Data Analytics Research Instructors"
+date: "08/27/2021"
+output:
+  html_document:
+    toc: true
+    number_sections: true
+    df_print: paged
+  pdf_document: default
 ---
 
 
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
 
-```{r}
-#import libraries
-library(ggplot2)
-library(gplots)
-library(RColorBrewer)
-library(beeswarm)
-library(tidyverse)
-library(ggbeeswarm)
-library(foreach)
-library(doParallel)
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+
+# Load required packages; install if necessary
+# CAUTION: DO NOT interrupt R as it installs packages!!
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+
+if (!require("gplots")) {
+  install.packages("gplots")
+  library(gplots)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+if (!require("foreach")) {
+  install.packages("foreach")
+  library(foreach)
+}
+if (!require("doParallel")) {
+  install.packages("doParallel")
+  library(doParallel)
+}
+
+
 ```
 
-We begin by loading the csv file in to a dataframe.
+# DeFi User Analysis
+
+## Prepare Transaction Data
+
+We begin by loading our prepared AAVE transaction data into a dataframe. The dataset has over 400,000 rows, and 27 columns. 
+
+We are directly loading the dataframe from an Rds archive instead of a CSV file to conserve space. 
 
 ```{r}
-#load in csv file to data frame
-df<-read_csv(file='transactions.csv')
-df
+#load Rds (binary version of csv file) into dataframe
+df<-read_rds('../Data/transactions.Rds')
+
+# Let's take a quick look 
+head(df)
+
 ```
+
 We reformat the dataframe so that each row represents a user, and the columns represent a summarization of the user's transaction history. 
 
 ```{r}
