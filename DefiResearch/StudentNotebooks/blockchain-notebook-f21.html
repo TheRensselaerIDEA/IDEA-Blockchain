@@ -1658,7 +1658,6 @@ summary {
 <li><a href="#dar-assignment-1-cloning-a-notebook-and-updating-the-repository"><span class="toc-section-number">1.2</span> DAR ASSIGNMENT 1: CLONING A NOTEBOOK AND UPDATING THE REPOSITORY</a><ul>
 <li><a href="#cloning-an-rpi-github-repository"><span class="toc-section-number">1.2.1</span> Cloning an RPI github repository</a></li>
 <li><a href="#required-for-assigment-1"><span class="toc-section-number">1.2.2</span> REQUIRED FOR ASSIGMENT 1</a></li>
-<li><a href="#confirm-what-you-just-did"><span class="toc-section-number">1.2.3</span> Confirm what you just did</a></li>
 </ul></li>
 </ul></li>
 <li><a href="#exploring-a-defi-transaction-dataset-using-aave"><span class="toc-section-number">2</span> Exploring a DeFi Transaction Dataset using AAVE</a><ul>
@@ -1688,7 +1687,7 @@ summary {
 <p>To contribute or submit to any RPI github repository you must validate your RPI github.com ID and send a confirmation email to John Erickson at <code>erickj4@rpi.edu</code>. Please do the following <strong>now</strong>:</p>
 <ul>
 <li>Browse to <a href="http://github.rpi.edu" class="uri">http://github.rpi.edu</a></li>
-<li>Login using your RPI credentials</li>
+<li>Log in using your RPI credentials</li>
 <li><strong>PLEASE DO THIS IMMEDIATELY BEFORE READING ANY FURTHER!!</strong></li>
 </ul>
 </div>
@@ -1697,11 +1696,13 @@ summary {
 <p>In this assignment we’re asking you to…</p>
 <ul>
 <li>clone the <code>IDEA-Blockchain</code> github repository…</li>
-<li>create a personal branch using git, and…</li>
-<li>make additions to the repository by creating a new, customized notebook.</li>
+<li>create a personal branch using git…</li>
+<li>copy and change an R notebook…</li>
+<li>generate (“knit”) a PDF based on that notebook, and…</li>
+<li>add these new files by “committing” and “pushing” to the github repository</li>
 </ul>
-<p>The instructions which follow explain how to accomplish this.</p>
-<p><strong>For DAR Fall 2021</strong> you <em>must</em> be using RStudio Server on the IDEA Cluster. Instructions for accessing “The Cluster” appear at the end of this notebook. Don’t forget to validate your RPI github ID as above and email <code>erickj4@rpi.edu</code></p>
+<p><em>The instructions which follow explain how to accomplish this. </em></p>
+<p><strong>NOTE: For DAR Fall 2021</strong> you <em>must</em> be using RStudio Server on the IDEA Cluster. Instructions for accessing “The Cluster” appear at the end of this notebook. Also, don’t forget to validate your RPI github ID as above and email <code>erickj4@rpi.edu</code></p>
 <div id="cloning-an-rpi-github-repository" class="section level3">
 <h3><span class="header-section-number">1.2.1</span> Cloning an RPI github repository</h3>
 <p>The recommended procedure for cloning and using this repository is as follows:</p>
@@ -1737,35 +1738,37 @@ summary {
 </ul></li>
 <li>Now in the RStudio Server UI, navigate to the <code>IDEA-Blockchain/DefiResearch/StudentNotebooks</code> directory via the <strong>Files</strong> panel (lower right panel)
 <ul>
-<li>Under the <strong>More</strong> menu, set this to be your R working directory</li>
-<li>Setting the correct working directory is essential for interactive R use!</li>
+<li>Under the <strong>More</strong> menu, set this to be your R <strong>working directory</strong></li>
+<li><em>Setting the correct working directory is essential for interactive R use!</em></li>
 </ul></li>
 </ul>
 </div>
 <div id="required-for-assigment-1" class="section level3">
 <h3><span class="header-section-number">1.2.2</span> REQUIRED FOR ASSIGMENT 1</h3>
 <ol style="list-style-type: decimal">
-<li>In RStudio, make a <strong>copy</strong> of <code>blockchain-notebook-f21.Rmd</code> file using a <em>new, original, descriptive</em> filename that <strong>includes your RCS ID!</strong>
+<li>In RStudio…
 <ul>
 <li>Open <code>blockchain-notebook-f21.Rmd</code>
 <ul>
 <li><strong>NOTE:</strong> When opening this <code>.Rmd</code> RStudio may warning you that some required packages are not installed, and ask you if you wish to install them.</li>
 <li>Go ahead and say yes. <strong>DO NOT INTERUPT PACKAGE INSTALLATION!</strong></li>
 </ul></li>
-<li><strong>Save As…</strong> using a new filename</li>
+<li><strong>Save As…</strong> using a <em>new, original, descriptive</em> filename that <strong>includes your RCS ID!</strong></li>
 <li>Example filename for user <code>erickj4</code>: <code>erickj4-assignment1-f21.Rmd</code></li>
+<li>You should see the file appear in the listing in your <strong>Files</strong> panel.</li>
 </ul></li>
-<li>Edit your new notebook using RStudio and save
+<li>Edit your new notebook using RStudio and save your results…
 <ul>
 <li>Change the <code>title:</code> and <code>subtitle:</code> headers (at the top of the file)</li>
 <li>Change the <code>author:</code></li>
 <li>Change the <code>date:</code></li>
-<li><strong>Save</strong> your changes</li>
+<li><strong>Save</strong> your changes (<code>&lt;cntl-s&gt;</code> works!)</li>
 </ul></li>
-<li>Use the RStudio <code>Knit</code> command to create an HTML file; repeat as necessary
+<li>Use the RStudio <code>Knit</code> command (top of the editing window) to create HTML and/or PDF files
 <ul>
-<li>Use the down arrow next to the word <code>Knit</code> and select <strong>Knit to HTML</strong> (Optional but handy)</li>
+<li>Use the down arrow next to the word <code>Knit</code> and select <strong>Knit to HTML</strong> (Optional but handy for previewing)</li>
 <li>Use the down arrow next to the word <code>Knit</code> and select <strong>Knit to PDF</strong> (Required for assignment)</li>
+<li>Repeat as necessary</li>
 </ul></li>
 <li>In the Linux terminal, use <code>git add</code> to add each new file you want to add to the repository
 <ul>
@@ -1778,31 +1781,42 @@ summary {
 <li>Type: <code>git commit -m &quot;some comment&quot;</code> where “some comment” is a useful comment describing your changes</li>
 <li>This commits your changes to your local repo, and sets the stage for your next operation.</li>
 </ul></li>
-<li>Finally, push your commits to the RPI github repo
+<li>Finally, “push” the commits in your working branch to the RPI github repo
 <ul>
 <li>Type: <code>git push origin dar-yourrcs</code> (where <code>dar-yourrcs</code> is the branch you’ve been working in)</li>
-<li>Your changes are now safely on the RPI github.</li>
+<li>Your changes are now safely on the RPI github, under your branch name.</li>
 </ul></li>
-<li><strong>REQUIRED:</strong> On the RPI github, submit a pull request.
+<li><strong>REQUIRED:</strong> On the RPI github, submit a pull request for your branch:
 <ul>
 <li>In a web browser, navigate to <a href="https://github.rpi.edu/DataINCITE/IDEA-Blockchain" class="uri">https://github.rpi.edu/DataINCITE/IDEA-Blockchain</a></li>
-<li>In the drop-down that says <strong>master</strong> (top left above the list of files) click and select <em>your</em> branch</li>
+<li>In the drop-down that says <strong>Master</strong> (top left above the list of files) click and select <em>your</em> branch</li>
 <li>It should give you the option to create a pull request</li>
 <li><strong>Submit a pull request for your branch</strong></li>
-<li>One of the DAR instructors will merge your branch, and your new files will be added to the master branch of the repo.</li>
+<li>Eventually one of the DAR instructors will merge your branch into the master branch of the repo.</li>
 </ul></li>
-<li>In the RStudio <strong>Files</strong> panel, select your newly created PDF file (checkbox to its left) and select <strong>Export</strong> under the <strong>More</strong> menu. This downloads your PDF file to your personal machine.</li>
-</ol>
-</div>
-<div id="confirm-what-you-just-did" class="section level3">
-<h3><span class="header-section-number">1.2.3</span> Confirm what you just did</h3>
-<p>For this assignment you will be asked to confirm the following in LMS:</p>
+<li>Confirm what you just did; make the following additional edits:
 <ul>
-<li>The location of the github: <em>Type repository URL here</em></li>
-<li>Your github ID: <em>Type your RCS ID here</em></li>
-<li>The name of your new branch: <em>Type your new branch name here</em></li>
-<li>The name of your new (copied) notebook: <em>Type your new notebook name here</em></li>
-<li>Now procede to LMS and <em>upload the PDF you created above</em>.</li>
+<li>What is the location of the github: <em>Type repository URL here</em></li>
+<li>What is your github ID: <em>Type your RCS ID here</em></li>
+<li>What is the name of your new branch: <em>Type your new branch name here</em></li>
+<li>What is the name of your new (copied) notebook: <em>Type your new notebook name here</em></li>
+<li>Save your changes and <code>knit</code> an updated PDF.</li>
+</ul></li>
+<li>Re-commit these fresh changes to the github
+<ul>
+<li>Confirm that you are still in your branch; type: <code>git branch</code></li>
+<li><code>git add</code> your <code>Rmd</code> and <code>PDF</code></li>
+<li><code>git commit -m</code> with a fresh message</li>
+<li><code>git push origin</code> your branch.</li>
+<li>Go to github and select your branch again; if your previous push has already been merged, submit another pull request.</li>
+<li>More than likely your previous pull request hasn’t been merged and you newest commit was automatically added to your existing request.</li>
+</ul></li>
+<li>Download your PDF and upload to LMS:</li>
+</ol>
+<ul>
+<li>In the RStudio <strong>Files</strong> panel, select your newly created PDF file (check the checkbox to its left) and select <strong>Export</strong> under the <strong>More</strong> menu.</li>
+<li>This downloads your PDF file to your personal machine.</li>
+<li>Now proceed to LMS and upload the PDF you created!</li>
 </ul>
 <p>Please also see this handy github “cheatsheet”: <a href="https://education.github.com/git-cheat-sheet-education.pdf" class="uri">https://education.github.com/git-cheat-sheet-education.pdf</a></p>
 </div>
@@ -1810,6 +1824,7 @@ summary {
 </div>
 <div id="exploring-a-defi-transaction-dataset-using-aave" class="section level1">
 <h1><span class="header-section-number">2</span> Exploring a DeFi Transaction Dataset using AAVE</h1>
+<p><em>This section is provided as background and is not required for Assignment 1. </em></p>
 <div id="what-is-aave" class="section level2">
 <h2><span class="header-section-number">2.1</span> What is AAVE?</h2>
 <p>From the <a href="https://docs.aave.com/developers/v/2.0/">developer site</a>: <em>Aave is a decentralised non-custodial liquidity protocol where users can participate as depositors or borrowers. Depositors provide liquidity to the market to earn a passive income, while borrowers are able to borrow in an over-collateralised (perpetually) or under-collateralised (one-block liquidity) fashion…The (Aave) protocol is implemented as a set of smart contracts on top of the <a href="https://ethereum.org/en/">Ethereum</a> blockchain. Smart contracts guarantee safety and do not require a middleman.</em></p>
