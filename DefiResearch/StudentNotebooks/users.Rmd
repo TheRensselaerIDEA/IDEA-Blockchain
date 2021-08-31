@@ -192,3 +192,16 @@ main = "Kmeans Cluster Centers",
 trace ="none")
 ```
 
+# Exploring the Influential Factors with a Biplot 
+
+```{r,fig.width=16,fig.height=8}
+plot1<-ggbiplot(my.pca,choices=c(1,2),
+  labels=rownames(df.scaled), #show point labels
+  var.axes=TRUE, # Display axes
+  ellipse = FALSE, # Don't display ellipse
+  obs.scale=1,
+  groups=as.factor(km$cluster)) +
+  ggtitle("User Data Projected on PC1 and PC2 ")
+
+plot1
+```
