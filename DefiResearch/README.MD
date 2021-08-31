@@ -4,4 +4,7 @@
 
 - **ReferenceNotebooks**: Python notebooks containing data collection and analysis on DeFi Data
 
-- **SampleNotebooks**: R notebooks containing exploration of DeFi data
+- **StudentNotebooks**: 
+    - R notebooks containing exploration of DeFi data
+    - Assignment notebooks
+    - Submitted student notebooks
