@@ -151,10 +151,10 @@ The recommended procedure for cloning and using this repository is as follows:
     * **Submit a pull request for your branch**
     * Eventually one of the DAR instructors will merge your branch into the master branch of the repo.
 8. Confirm what you just did; make the following additional edits:
-   * What is the location of the github: _Type repository URL here_
-   * What is your github ID: _Type your RCS ID here_
-   * What is the name of your new branch: _Type your new branch name here_
-   * What is the name of your new (copied) notebook: _Type your new notebook name here_
+   * What is the location of the github: https://github.rpi.edu/DataINCITE/IDEA-Blockchain/tree/dar-cammic
+   * What is your github ID: cammic
+   * What is the name of your new branch: dar-cammic
+   * What is the name of your new (copied) notebook: cammic-blockchain-notebook-f21.Rmd
    * Save your changes and `knit` an updated PDF. 
 9. Re-commit these fresh changes to the github
    * Confirm that you are still in your branch; type: `git branch` 
