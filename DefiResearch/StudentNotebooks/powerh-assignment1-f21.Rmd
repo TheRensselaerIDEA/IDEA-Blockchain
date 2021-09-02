@@ -1,0 +1,314 @@
+---
+title: "Powerh DeFi Example Notebook:"
+subtitle: "Powerh DAR Assignment 1 (Fall 2021)"
+author: "Hannah Powers"
+date: "09/01/2021"
+output:
+  pdf_document: default
+  html_document:
+    toc: true
+    number_sections: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+# CAUTION: DO NOT interrupt R as it installs packages!!
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+
+```
+
+# Introductory Decentralized Finance (DeFi) Research Notebook
+
+This notebook is broken into two main parts:
+
+    * Part 1 is a basic introduction to github and RStudio Server
+    * Part 2 is an introduction to the DeFi transaction dataset
+
+This R Notebook and its related R scripts provide a very basic introduction to an interesting **Decentralized Finance (DeFi) ** dataset. All data was obtained 
+by querying an API on [The Graph](https://thegraph.com/), an indexing protocol for querying networks like Ethereum, for transaction data based on [the AAVE protocol](https://thegraph.com/explorer/subgraph?id=0x0d69090672c1e5a94e9aedfbc59558d18a78e1d3-0&view=Overview). For more information on AAVE see [the AAVE developer notes](https://docs.aave.com/developers/v/2.0/). The AAVE protocol is based on [Ethereum](https://ethereum.org/en/), an important cryptocurrency platform.
+
+The RPI github repository for all the code required for this notebook, including a snapshots of AAVE transaction and user data, may be found at:
+
+* https://github.rpi.edu/DataINCITE/IDEA-Blockchain
+
+The IDEA-Blockchain github also contains notebooks used to harvest the AAVE dataset, which you are welcome to examine. 
+
+## BEFORE YOU BEGIN
+
+To contribute or submit to any RPI github repository you must validate your RPI github.com ID and send a confirmation email to John Erickson at `erickj4@rpi.edu`. Please do the following **now**:
+
+* Browse to http://github.rpi.edu
+* Log in using your RPI credentials
+* **PLEASE DO THIS IMMEDIATELY BEFORE READING ANY FURTHER!!**
+
+
+## DAR ASSIGNMENT 1: CLONING A NOTEBOOK AND UPDATING THE REPOSITORY
+
+In this assignment we're asking you to...
+
+* clone the `IDEA-Blockchain` github repository...
+* create a personal branch using git...
+* copy and change an R notebook...
+* generate ("knit") a PDF based on that notebook, and...
+* add these new files by "committing" and "pushing" to the github repository
+
+*The instructions which follow explain how to accomplish this. *
+
+**NOTE: For DAR Fall 2021** you *must* be using RStudio Server on the IDEA Cluster. Instructions for accessing "The Cluster" appear at the end of this notebook. Also, don't forget to validate your RPI github ID as above and email `erickj4@rpi.edu` 
+
+### Cloning an RPI github repository
+
+The recommended procedure for cloning and using this repository is as follows:
+
+* Access the RPI network via VPN	
+    * See https://itssc.rpi.edu/hc/en-us/articles/360008783172-VPN-Connection-and-Installation for information
+
+* Access RStudio Server on the IDEA Cluster at http://lp01.idea.rpi.edu/rstudio-ose/
+    * You must be on the RPI VPN!!
+* Access the Linux shell on the IDEA Cluster by clicking the **Terminal** tab of RStudio Server (lower left panel). 
+    * You now see the Linux shell on the IDEA Cluster
+    * `cd` (change directory) to enter your home directory using: `cd ~`
+    * Type `pwd` to confirm
+    * NOTE: Advanced users may use `ssh` to directly access the Linux shell from a macOS or Linux command line
+* Type `git clone https://github.rpi.edu/DataINCITE/IDEA-Blockchain.git` from within your `home` directory
+    * This will create a new directory `IDEA-Blockchain`
+* In the Linux shell, `cd` to `IDEA-Blockchain/DefiResearch/StudentNotebooks`
+    * Type `ls -al` to list the current contents
+    * Don't be surprised if you see many files!
+* In the Linux shell, type `git checkout -b dar-yourrcs` where `yourrcs` is your RCS id
+    * For example, if your RCS is `erickj4`, your new branch should be `dar-erickj4`
+    * It is _critical_ that you include your RCS id in your branch id
+* Now in the RStudio Server UI, navigate to the `IDEA-Blockchain/DefiResearch/StudentNotebooks` directory via the **Files** panel (lower right panel)
+    * Under the **More** menu, set this to be your R **working directory**
+    * *Setting the correct working directory is essential for interactive R use!*
+
+### REQUIRED FOR ASSIGMENT 1
+
+1. In RStudio...
+    * Open `blockchain-notebook-f21.Rmd`
+        * **NOTE:** When opening this `.Rmd` RStudio may warning you that some required packages are not installed, and ask you if you wish to install them.
+        * Go ahead and say yes. **DO NOT INTERUPT PACKAGE INSTALLATION!**
+    * **Save As...** using a *new, original, descriptive* filename that **includes your RCS ID!**
+    * Example filename for user `erickj4`: `erickj4-assignment1-f21.Rmd` 
+    * You should see the file appear in the listing in your **Files** panel.
+2. Edit your new notebook using RStudio and save your results...
+    * Change the `title:` and `subtitle:` headers (at the top of the file)
+    * Change the `author:` 
+    * Change the `date:`
+    * **Save** your changes (`<cntl-s>` works!)
+3. Use the RStudio `Knit` command (top of the editing window) to create HTML and/or PDF files
+    * Use the down arrow next to the word `Knit` and select **Knit to HTML** (Optional but handy for previewing)
+    * Use the down arrow next to the word `Knit` and select **Knit to PDF** (Required for assignment)
+    * Repeat as necessary
+4. In the Linux terminal, use `git add` to add each new file you want to add to the repository
+    * Type: `git add yourfilename.Rmd` 
+    * Type: `git add yourfilename.html` (created when you knit to HTML)
+    * Type: `git add yourfilename.pdf` (created when you knit to PDF)
+5. When you're ready, in Linux commit your changes: 
+    * Type: `git commit -m "some comment"` where "some comment" is a useful comment describing your changes
+    * This commits your changes to your local repo, and sets the stage for your next operation.
+6. Finally, "push" the commits in your working branch to the RPI github repo
+    * Type: `git push origin dar-yourrcs` (where `dar-yourrcs` is the branch you've been working in)
+    * Your changes are now safely on the RPI github, under your branch name. 
+7. **REQUIRED:** On the RPI github, submit a pull request for your branch:
+    * In a web browser, navigate to https://github.rpi.edu/DataINCITE/IDEA-Blockchain
+    * In the drop-down that says **Master** (top left above the list of files) click and select *your* branch
+    * It should give you the option to create a pull request
+    * **Submit a pull request for your branch**
+    * Eventually one of the DAR instructors will merge your branch into the master branch of the repo.
+8. Confirm what you just did; make the following additional edits:
+   * What is the location of the github: https://github.rpi.edu/DataINCITE/IDEA-Blockchain
+   * What is your github ID: powerh
+   * What is the name of your new branch: dar-powerh
+   * What is the name of your new (copied) notebook: powerh-assignment-f21.Rmd
+   * Save your changes and `knit` an updated PDF. 
+9. Re-commit these fresh changes to the github
+   * Confirm that you are still in your branch; type: `git branch` 
+   * `git add` your `Rmd` and `PDF` 
+   * `git commit -m` with a fresh message
+   * `git push origin` your branch. 
+   * Go to github and select your branch again; if your previous push has already been merged, submit another pull request.
+   * More than likely your previous pull request hasn't been merged and you newest commit was automatically added to your existing request. 
+10. Download your PDF and upload to LMS:
+   * In the RStudio **Files** panel, select your newly created PDF file (check the checkbox to its left) and select **Export** under the **More** menu. 
+   * This downloads your PDF file to your personal machine. 
+   * Now proceed to LMS and upload the PDF you created!
+
+Please also see this handy github "cheatsheet": https://education.github.com/git-cheat-sheet-education.pdf
+
+
+# Exploring a DeFi Transaction Dataset using AAVE
+
+*This section is provided as background and is not required for Assignment 1. *
+
+## What is AAVE? 
+
+From the [developer site](https://docs.aave.com/developers/v/2.0/): _Aave is a decentralised non-custodial liquidity protocol where users can participate as depositors or borrowers. Depositors provide liquidity to the market to earn a passive income, while borrowers are able to borrow in an over-collateralised (perpetually) or under-collateralised (one-block liquidity) fashion...The (Aave) protocol is implemented as a set of smart contracts on top of the [Ethereum](https://ethereum.org/en/) blockchain. Smart contracts guarantee safety and do not require a middleman._
+
+For (much) more detail refer to the [AAVE Protocol V2.0 Whitepaper](https://github.com/aave/protocol-v2/blob/master/aave-v2-whitepaper.pdf)
+ 
+## Prepare Transaction Data
+
+We begin by loading our prepared AAVE transaction data into a dataframe. The dataset has over 400,000 rows, and 27 columns. 
+
+We are directly loading the dataframe from an Rds archive instead of a CSV file to conserve space. 
+
+```{r}
+#load Rds (binary version of csv file) into dataframe
+df<-read_rds('../Data/transactions.Rds')
+
+# Let's take a quick look 
+head(df)
+
+str(df)
+
+summary(df)
+```
+
+## Analyze Transaction Types
+
+Next, we will examine the different types of transactions present in the data. We make a bar plot to visualize the number of each transaction types. Deposit is the most common type of transaction, whereas swaps are the most rare.
+
+```{r}
+#set color palette
+colors = brewer.pal(6,"Set2")
+
+#create barplot
+barplot(table(df$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
+```
+There are more deposits than borrows, because users often need to overcollateralize for loans. 
+
+
+Now, we will examine the amount of US dollars being used in the different types of transactions. We create box plots for the 4 types of transactions that have the amount feature associated with them, and visualize the distribution of that column for the different transactions. We can see that most transactions are completed with very little money. 
+
+```{r}
+#create boxplot
+boxplot(amountUSD~type,data=df,outline=FALSE,col=colors,main="Transaction Amounts",xlab="Type",ylab="Amount (USD)")
+
+```
+```{r}
+boxplot(log(amountUSD)~type,data=df,outline=FALSE,col=colors,main="Log Transaction Amounts",xlab="Type",ylab="Log Amount (USD)")
+```
+There are many borrows and repays with high transactions amounts, but deposits and redeems have much lower transactions amounts.
+
+
+## Look at Sample User Transaction Histories 
+
+Finally, we will examine the transaction history of different users. To do this, we will select 3 random users from the data who have completed between 100 and 300 transactions. Then, we create swarmplots displaying the different types of transactions those users made over time.
+
+```{r,fig.width=16,fig.height=8}
+#set seed
+set.seed(1)
+
+#get 3 random users that have between 100 and 300 transactions
+users<-vector(length=3)
+count<-0
+while(count<=3){
+  success<-FALSE
+  while(!success){
+    #get random user
+    ruser<-sample(df$user,1)
+    
+    #check for valid number of transactions
+    length<-nrow(filter(df,user==ruser))
+    if (length>100 && length<300){
+      users[count]=ruser
+      success<-TRUE
+      count<-count+1
+    }
+  }
+}
+df.rusers<-filter(df, user %in%users)
+
+#create swarmplot
+
+#liquidations
+#borrow
+#deposit
+#redeem
+#repay
+#swap
+
+ggplot(df.rusers,aes(user, timestamp,color=type)) + 
+        geom_beeswarm(cex=1)+
+        coord_flip()+
+        ggtitle("User Transaction History")
+
+```
+Users have very different transactions patterns, which we will try to better understand. 
+
+## Analyze Individual Currencies (USDT)
+
+USDT is interesting because it has more borrows than deposits. This may be because it is a stable coin. 
+
+```{r}
+
+df.usd<-filter(df,reserve=="USDT")
+barplot(table(df.usd$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
+```
+
+
+# APPENDIX: Accessing RStudio Server on the IDEA Cluster
+
+The IDEA Cluster provides five compute nodes (4x 48 cores, 1x 80 cores, 1x storage server)
+
+* The Cluster requires RCS credentials, enabled via registration in class
+    * email John Erickson for problems `erickj4@rpi.edu`
+* RStudio, Jupyter, MATLAB, GPUs (on two nodes); lots of storage and computes
+* Access via RPI physical network or VPN only
+
+**RStudio GUI Access for DAR:**
+
+* Access the RPI VPN 
+* Browse to: http://lp01.idea.rpi.edu/rstudio-ose/  (RStudio Server)
+* Log in using your RCS username and password
+    * If you cannot log in, contact John Erickson at erickj4@rpi.edu
+
+**Shared Data on Cluster:**
+
+* Users enrolled in DAR have access to `/academics/MATP-4910-F21` 
+    * Usually DAR users will see a symbolic ("soft") link in their home directories
+    * If you do not, type the following in the **Terminal** via RStudio: `ln -s /academics/MATP-4910-F21/ MATP-4910-F21`
+
+**For advanced users:**
+
+* All idea_users have access to shared storage via `/data` ("data" in your home directories)
+    * You might wish to use this for data sharing in team projects...
+    * ...but we recommend using github for shared code development
+* Shell access to nodes: You must access "landing pad" first, then compute node:
+* `ssh your_rcs@lp01.idea.rpi.edu`  For example: `ssh erickj4@lp01.idea.rpi.edu`
+* Then, `ssh` to the desired compute node, e.g.: `ssh idea-node-02`
