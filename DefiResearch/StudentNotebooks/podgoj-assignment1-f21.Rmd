@@ -1,6 +1,6 @@
 ---
-title: "DeFi Example Notebook:"
-subtitle: "DAR Assignment 1 (Fall 2021)"
+title: "Jason's DeFi Example Notebook:"
+subtitle: "Jason's DAR Assignment 1 (Fall 2021)"
 author: "Jason Podgorski"
 date: "09/01/2021"
 output:
@@ -151,7 +151,7 @@ The recommended procedure for cloning and using this repository is as follows:
     * **Submit a pull request for your branch**
     * Eventually one of the DAR instructors will merge your branch into the master branch of the repo.
 8. Confirm what you just did; make the following additional edits:
-   * What is the location of the github: https://github.rpi.edu/DataINCITE/IDEA-Blockchain.git
+   * What is the location of the github: https://github.rpi.edu/DataINCITE/IDEA-Blockchain
    * What is your github ID: podgoj
    * What is the name of your new branch: dar-podgoj
    * What is the name of your new (copied) notebook: podgoj-assignment1-f21.Rmd
