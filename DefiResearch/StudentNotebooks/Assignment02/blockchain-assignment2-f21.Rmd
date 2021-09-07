@@ -112,6 +112,7 @@ We are directly loading the dataframe from an Rds archive instead of a CSV file 
 
 ```{r}
 #load Rds (binary version of csv file) into dataframe
+# Assumes this notebook is in: ~/IDEA-Blockchain/DefiResearch/StudentNotebooks/Assignment02
 df<-read_rds('../../Data/transactions.Rds')
 
 # Let's take a quick look at the first few observation
@@ -126,11 +127,11 @@ summary(df)
 ```
 
 
-First let's do some preliminary analysis before we ask the questions.
+First we'll do some preliminary analysis before we ask detailed questions.
 
 ## Analyze Transaction Types
 
-Let's examine the different types of transactions present in the data. We make a bar plot to visualize the number of each transaction types. Deposit is the most common type of transaction, whereas swaps are the most rare.
+Let's examine the different types of _transactions_ present in the data. We'll make a simple bar plot to visualize the number of each transaction types. "Deposit" is the most common type of transaction, whereas "swaps" are the most rare.
 
 ```{r}
 #set color palette
@@ -140,10 +141,11 @@ colors = brewer.pal(6,"Set2")
 barplot(table(df$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
 ```
 
-There are more deposits than borrows, because users often need to overcollateralize for loans. 
+There are more "deposits" than "borrows," because users often need to overcollateralize for loans. 
 
+Now we'll examine the amount of US dollars being used in the different types of transactions. We create box plots for the four types of transactions that have the "amount" feature associated with them, and we visualize the distribution of that column for the different transactions. 
 
-Now, we will examine the amount of US dollars being used in the different types of transactions. We create box plots for the 4 types of transactions that have the amount feature associated with them, and visualize the distribution of that column for the different transactions. We can see that most transactions are completed with very little money. 
+We can see that most transactions are completed with very little money. 
 
 ```{r}
 #create boxplot
@@ -152,23 +154,32 @@ boxplot(amountUSD~type,data=df,outline=FALSE,col=colors,
 
 ```
 
-There are some very large amounts so it is also helpful to look on a log scale.
+We do find some very large amounts, so it's helpful to look at this on a log scale.
+
 ```{r}
 boxplot(log(amountUSD)~type,data=df,outline=FALSE,col=colors,
         main="Log Transaction Amounts",xlab="Type",ylab="Log Amount (USD)")
 ```
 
-There are many borrows and repays with high transactions amounts, but deposits and redeems have much lower transactions amounts.
+Observation: _There are many borrows and repays with high transactions amounts, but deposits and redeems have much lower transactions amounts._
 
 ## Examine Reserve Coins  
 
-There are 50 different "Reserve" coins used in transaction in AAVE.
-Let's create a table of the reserve coins with at least 500 transactions and rank order them by their volume. 
+There are 50 different "Reserve" coins used in transactions in AAVE.
+Let's create a table of those reserve coins with at least 500 transactions and rank order them by their volume. 
+
 ```{r}
 # Use deplyr to drop NA reserves, add the counts and then kep only the top 20
-reservecoins<-df %>%  drop_na(reserve)  %>% count(reserve) %>% arrange(-n) %>% head(20)
+reservecoins <- df %>%  drop_na(reserve) %>% 
+  count(reserve) %>% 
+  arrange(-n) %>% 
+  head(20)
+
 # Add the rank to help keep track of the reserve coins
-reservecoins<- reservecoins %>%mutate(rank=1:nrow(reservecoins),.before=reserve)
+reservecoins <- reservecoins %>% 
+  mutate(rank=1:nrow(reservecoins),.before=reserve)
+
+# List the results nicely with kable()
 kable(reservecoins)
 
 ```
@@ -177,13 +188,14 @@ Let's look at the number of transactions types for each currency.
 
 ```{r}
 
-TopcoinSummary<- df %>% filter(reserve%in% reservecoins$reserve) %>%  group_by(reserve) %>% 
-  count(type) %>% mutate(percent = n/sum(n)*100)
+TopcoinSummary <- df %>% filter(reserve %in% reservecoins$reserve) %>%
+  group_by(reserve) %>% 
+  count(type) %>% 
+  mutate(percent = n/sum(n)*100)
 
 kable(TopcoinSummary) 
 
 ```
-
 
 
 ## Look at Sample User Transaction Histories 
@@ -194,7 +206,7 @@ Finally, we will examine the transaction history of different users. To do this,
 #set seed
 set.seed(1)
 
-#get 3 random users that have between 100 and 300 transactions
+# Select three random users that have between 100 and 300 transactions
 users<-vector(length=3)
 count<-0
 while(count<=3){
@@ -214,14 +226,7 @@ while(count<=3){
 }
 df.rusers<-filter(df, user %in%users)
 
-#create swarmplot
-
-#liquidations
-#borrow
-#deposit
-#redeem
-#repay
-#swap
+# Create a "swarmplot"
 
 ggplot(df.rusers,aes(user, timestamp,color=type)) + 
         geom_beeswarm(cex=1)+
@@ -229,29 +234,29 @@ ggplot(df.rusers,aes(user, timestamp,color=type)) +
         ggtitle("User Transaction History")
 
 ```
-Users have very different transactions patterns, which we will try to better understand. 
 
+Observation: _Users have very different transactions patterns, which we will try to better understand. _
 
 
 # Activities
 ##$\color{blue}{Exercise~1} (10 pts)$  
 
-1. Divide the top 20 reserve coins between your team members so each team member has the same amount of coins (feel free to add or subtract coins if necessary).
+1. Divide the top 20 reserve coins between your team members so each team member has the same amount of coins; feel free to add or subtract coins if necessary.
 
-2. Look up your coins on the internet to find out what they are.  Look  them up on defipulse.com to see their Total Value Locked (TVL).
+2. Look up your coins on the internet to find out what they are.  ProTip: Look them up on http://defipulse.com to see their _Total Value Locked (TVL)_.
 
-3. Examine the percentage of transaction types for your coins.  Hypothesize why that coin may have more of one type of transactions than another.
+3. Examine the percentage of transaction types for your coins.  Hypothesize why a given coin might have more of one type of transaction than another.
 
-4. Prepare one slide with the findings for each of your coins. 
+4. _Prepare one slide with the findings for each of your coins._ (one slide summarizing each coin)
 
-5. Coordinate with your team, to combine your description into a single presentation.  Develop a common format for presenting your coins so that common information for a coin (e.g. TVL)  is shown in the same format.  
+5. Coordinate with your team, to combine each of your member's coin descriptions into a single presentation.  Please develop a common format or template for presenting your coin summaries so that the common information for a coin (e.g. TVL) is shown in the same format. (Your slide summaries should look the same!)
 
 6. Be prepared to present your team presentation to your client in class on Thursday 9/16.
 
 
 ##$\color{blue}{Exercise~2} (10 pts)$ 
 
-1. Perform a creative exploration of some aspect of the Defi Data that you find interesting.   Put your work in this notebook. It should include at least one data visualization.  
+1. Perform a "creative exploration" of some aspect of the Defi data that you find interesting.   Add your work in this notebook. _Your work should include at least one data visualization._
 
 2. Put your work in this notebook.
 
@@ -259,16 +264,5 @@ Users have very different transactions patterns, which we will try to better und
 
 4. Be prepared to share (2 minutes) in team meeting.
 
-5. Extra credit for above and beyond work. 
-
-
-
-
-
-
-
-
-
-
-
+5. _You'll receive extra credit for work that goes "above and beyond" this assignment! _
 
