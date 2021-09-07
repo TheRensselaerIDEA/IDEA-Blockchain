@@ -67,7 +67,7 @@ if (!require("xts")) {
 For this and subsequent assignments you'll follow the same basic github steps you used for Assignment 1, ie:
 
 * **Option 1:** Update the copy of your team's repository currently in your home directory:
-    * _This is the preferred option!_
+    * _This is the preferred option **if** you have already cloned the repository_
     * In the Linux terminal: `git pull origin master`
     * If there are errors, it's simplest to proceed to "Option 2"
     * If no errors, check your branch: `git branch` (should be something like `dar-rcsid`)
