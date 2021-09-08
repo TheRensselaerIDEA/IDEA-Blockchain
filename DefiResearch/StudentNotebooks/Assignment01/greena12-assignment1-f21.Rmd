@@ -154,7 +154,7 @@ The recommended procedure for cloning and using this repository is as follows:
    * What is the location of the github: https://github.rpi.edu/DataINCITE/IDEA-Blockchain/compare/dar-greena12
    * What is your github ID: greena12
    * What is the name of your new branch: dar-greena12
-   * What is the name of your new (copied) notebook: greena12-assignment1-f21.Rmd
+   * What is the name of your new (copied) notebook: greena12-assignment1-f21.Rm
    * Save your changes and `knit` an updated PDF. 
 9. Re-commit these fresh changes to the github
    * Confirm that you are still in your branch; type: `git branch` 
