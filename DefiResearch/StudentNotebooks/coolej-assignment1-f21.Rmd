@@ -4,11 +4,11 @@ subtitle: "DAR Coolej (Fall 2021)"
 author: "Jess Cooley"
 date: "09/07/2021"
 output:
+  pdf_document: default
   html_document:
     toc: true
     number_sections: true
     df_print: paged
-  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -150,11 +150,11 @@ The recommended procedure for cloning and using this repository is as follows:
     * It should give you the option to create a pull request
     * **Submit a pull request for your branch**
     * Eventually one of the DAR instructors will merge your branch into the master branch of the repo.
-8. Confirm what you just did; make the following additional edits:
-   * What is the location of the github: _Type repository URL here_
-   * What is your github ID: _Type your RCS ID here_
-   * What is the name of your new branch: _Type your new branch name here_
-   * What is the name of your new (copied) notebook: _Type your new notebook name here_
+8. Confirm what you just did; make the following additional edits: I did do the above
+   * What is the location of the github: https://github.rpi.edu/DataINCITE/IDEA-Blockchain
+   * What is your github ID: _coolej_
+   * What is the name of your new branch: _dar-coolej_
+   * What is the name of your new (copied) notebook: _coolej-assignment1-f21.Rmd_
    * Save your changes and `knit` an updated PDF. 
 9. Re-commit these fresh changes to the github
    * Confirm that you are still in your branch; type: `git branch` 
