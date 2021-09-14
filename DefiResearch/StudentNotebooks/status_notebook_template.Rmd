@@ -1,5 +1,5 @@
 ---
-title: "Darr Project Status Notebook Template"
+title: "DAR F21 Project Status Notebook Template"
 author: "Student Name"
 date: "TBD"
 output:
@@ -7,7 +7,7 @@ output:
     toc: yes
   html_document:
     toc: yes
-subtitle: "DAR project name (Eat4Genes or DeFi)"
+subtitle: "DAR Project Name (Eat4Genes or DeFi)"
 ---
 
 ## Instructions (DELETE BEFORE SUBMISSION)
@@ -103,6 +103,3 @@ See the Grading Rubric for guidance on how the contents of this notebook will be
     * If your figures are "live," either include source code embedded in notebook or provide github location for their source scripts.
     * If your contributions included things that are not done in an R-notebook, (e.g. researching, writing, and coding in Python), you still need to do this status notebook in R.  Describe what you did here and put any products that you created in github. If you are writing online documents (e.g. overleaf or google docs), you can include links to the documents in this notebook instead of actual text.
   
-
-
-    
