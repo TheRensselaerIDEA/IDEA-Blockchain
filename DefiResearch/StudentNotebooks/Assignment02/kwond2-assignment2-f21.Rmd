@@ -1,0 +1,259 @@
+---
+title: "DAR Defi Team Assignment 2 (Fall 2021)"
+subtitle: "DeFi Reserve Coins"
+author: "Duke Kwon"
+date: "09/08/2021"
+output:
+  pdf_document: default
+  html_document:
+    toc: true
+    number_sections: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+# CAUTION: DO NOT interrupt R as it installs packages!!
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dp)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+
+```
+
+
+# Prepare Transaction Data and Explore
+
+We begin by loading our prepared AAVE transaction data into a dataframe. The dataset has over 400,000 rows, and 27 columns. 
+
+We are directly loading the dataframe from an Rds archive instead of a CSV file to conserve space. 
+
+```{r}
+#load Rds (binary version of csv file) into dataframe
+# Assumes this notebook is in: ~/IDEA-Blockchain/DefiResearch/StudentNotebooks/Assignment02
+df<-read_rds('../../Data/transactions.Rds')
+
+# Let's take a quick look at the first few observation
+head(df)
+```
+
+Now look at the summaries to see the types, values, and missingness (NA's) of the data.
+
+```{r}
+
+summary(df)
+```
+
+
+First we'll do some preliminary analysis before we ask detailed questions.
+
+## Analyze Transaction Types
+
+Let's examine the different types of _transactions_ present in the data. We'll make a simple bar plot to visualize the number of each transaction types. "Deposit" is the most common type of transaction, whereas "swaps" are the most rare.
+
+```{r}
+#set color palette
+colors = brewer.pal(6,"Set2")
+
+#create barplot
+barplot(table(df$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
+```
+
+There are more "deposits" than "borrows," because users often need to overcollateralize for loans. 
+
+Now we'll examine the amount of US dollars being used in the different types of transactions. We create box plots for the four types of transactions that have the "amount" feature associated with them, and we visualize the distribution of that column for the different transactions. 
+
+We can see that most transactions are completed with very little money. 
+
+```{r}
+#create boxplot
+boxplot(amountUSD~type,data=df,outline=FALSE,col=colors,
+        main="Transaction Amounts",xlab="Type",ylab="Amount (USD)")
+
+```
+
+We do find some very large amounts, so it's helpful to look at this on a log scale.
+
+```{r}
+boxplot(log(amountUSD)~type,data=df,outline=FALSE,col=colors,
+        main="Log Transaction Amounts",xlab="Type",ylab="Log Amount (USD)")
+```
+
+Observation: _There are many borrows and repays with high transactions amounts, but deposits and redeems have much lower transactions amounts._
+
+## Examine Reserve Coins  
+
+There are 50 different "Reserve" coins used in transactions in AAVE.
+Let's create a table of those reserve coins with at least 500 transactions and rank order them by their volume. 
+
+```{r}
+# Use deplyr to drop NA reserves, add the counts and then kep only the top 20
+reservecoins <- df %>%  drop_na(reserve) %>% 
+  count(reserve) %>% 
+  arrange(-n) %>% 
+  head(20)
+
+# Add the rank to help keep track of the reserve coins
+reservecoins <- reservecoins %>% 
+  mutate(rank=1:nrow(reservecoins),.before=reserve)
+
+# List the results nicely with kable()
+kable(reservecoins)
+
+```
+
+Let's look at the number of transactions types for each currency. 
+
+```{r}
+#TopcoinSummary <- df %>% filter(reserve %in% reservecoins$reserve) %>%
+#  group_by(reserve == "SNX") %>% 
+#  count(type) %>% 
+#  mutate(percent = n/sum(n)*100)
+#kable(TopcoinSummary) 
+
+
+TopcoinSummary <- df %>% filter(reserve %in% reservecoins$reserve) %>%
+  group_by(reserve) %>% 
+  count(type) %>% 
+  mutate(percent = n/sum(n)*100)
+
+kable(TopcoinSummary) 
+```
+
+
+
+## Look at Sample User Transaction Histories 
+
+Finally, we will examine the transaction history of different users. To do this, we will select 3 random users from the data who have completed between 100 and 300 transactions. Then, we create swarmplots displaying the different types of transactions those users made over time.
+
+```{r,fig.width=16,fig.height=8}
+#set seed
+set.seed(1)
+
+# Select three random users that have between 100 and 300 transactions
+users<-vector(length=3)
+count<-0
+while(count<=3){
+  success<-FALSE
+  while(!success){
+    #get random user
+    ruser<-sample(df$user,1)
+    
+    #check for valid number of transactions
+    length<-nrow(filter(df,user==ruser))
+    if (length>100 && length<300){
+      users[count]=ruser
+      success<-TRUE
+      count<-count+1
+    }
+  }
+}
+df.rusers<-filter(df, user %in%users)
+
+# Create a "swarmplot"
+
+ggplot(df.rusers,aes(user, timestamp,color=type)) + 
+        geom_beeswarm(cex=1)+
+        coord_flip()+
+        ggtitle("User Transaction History")
+
+```
+
+Observation: _Users have very different transactions patterns, which we will try to better understand. _
+
+
+Let's do some exploring of the columns, since most of it is left unexplained.
+More specifically, let's take a look at amountUSDCollateral which is what I assume is the
+collateral put down by a borrower (in USD units).
+
+```{r}
+droppedcollat_full <- drop_na(df, amountUSDCollateral) # Remove NA items.
+nonNAlength <- length(droppedcollat_full$amountUSDCollateral)
+numNA <- length(df$amountUSDCollateral) - nonNAlength
+sprintf("Number of N/A: %d, Number non-N/A: %d, Fraction: %f",numNA, nonNAlength, nonNAlength/numNA)
+```
+Odd that the number of non-N/A is so slim. Taking a look at the box plot of types tells us a lot more:
+
+```{r}
+boxplot(amountUSDCollateral~type,data=droppedcollat_full,outline=FALSE,col=colors,
+        main="Transaction Amounts",xlab="Type",ylab="Amount (USD)")
+```
+We see that these data points are likely just the liquidation in USD amount. Let's take a look at the overall values it takes on.
+```{r}
+# Take a look at the first 100 lowest
+head(df[order(df$amountUSDCollateral),]$amountUSDCollateral, 100)
+```
+The values are effectively 0. It might be a good idea to take a look at the spread of the values. 
+
+```{r}
+hist(droppedcollat_full$amountUSDCollateral,breaks = 50,col=colors,
+        main="Histogram of USD Collateral",xlab="Amount (USD)",ylab="Frequency")
+```
+Let's set an arbitrary threshold to see how it's distributed.
+```{r}
+eps = 1 # filter out small dollar values to see evaluate the spread.
+droppedcollat = droppedcollat_full
+hist(log(droppedcollat$amountUSDCollateral),breaks =50,col=colors,
+        main="Log Histogram of USD Collateral Liquidations",xlab="Amount (USD)",ylab="Frequency")
+num_thresholded = length(droppedcollat$amountUSDCollateral[droppedcollat$amountUSDCollateral <= eps])
+droppedcollat$amountUSDCollateral[droppedcollat$amountUSDCollateral <= eps] <- 0
+zero_droppedcollat <- droppedcollat[droppedcollat$amountUSDCollateral > eps,]
+sprintf("Amount below eps = %d removed: %d, Total fraction removed: %f", eps, num_thresholded, num_thresholded/nonNAlength)
+hist(zero_droppedcollat$amountUSDCollateral,breaks =50,col=colors,
+        main="Histogram After Filtering",xlab="Amount (USD)",ylab="Frequency")
+
+hist(log(zero_droppedcollat$amountUSDCollateral),breaks =50,col=colors,
+        main="Log Histogram After Filtering",xlab="Amount (USD)",ylab="Frequency")
+
+```
+The fraction of liquidations below or equal to eps = $1 is about 42.9%, which is very interesting. Usually we can take a look at the 3rd and 4th moments for skew information, but taking a look at the mean, median gap, and variance tells us quite a bit. Also, the log plot is enlightening as to how the data is distributed - it's bimodal. It'd be interesting to see where these ~0 dollar liquidations are coming from.
+
+```{r}
+mn = mean(droppedcollat$amountUSDCollateral)
+med = median(droppedcollat$amountUSDCollateral)
+vr = var(droppedcollat$amountUSDCollateral)
+sprintf("mean: %f, median: %f, variance: %f", mn, med, vr)
+```
+Despite the majority of liquidations being quite low, the few extremely large liquidations push the mean up quite a bit.
+Exploring the behavior of the users that were liquidated with high USD collateral values may be interesting to look into.
+
