@@ -153,8 +153,8 @@ The recommended procedure for cloning and using this repository is as follows:
 8. Confirm what you just did; make the following additional edits:
    * What is the location of the github: _https://github.rpi.edu/DataINCITE/IDEA-Blockchain/tree/dar-mink3_
    * What is your github ID: _mink3_
-   * What is the name of your new branch: _Type your new branch name here_
-   * What is the name of your new (copied) notebook: _Type your new notebook name here_
+   * What is the name of your new branch: _dar-mink3_
+   * What is the name of your new (copied) notebook: _mink3-assignment1-f21.Rmd_
    * Save your changes and `knit` an updated PDF. 
 9. Re-commit these fresh changes to the github
    * Confirm that you are still in your branch; type: `git branch` 
