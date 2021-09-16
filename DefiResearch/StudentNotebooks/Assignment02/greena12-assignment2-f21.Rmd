@@ -198,6 +198,9 @@ Observation: _Users have very different transactions patterns, which we will try
 ##$\color{blue}{Exercise~1} (10 pts)$  
 
 1. Divide the top 20 reserve coins between your team members so each team member has the same amount of coins; feel free to add or subtract coins if necessary.
+```{r}
+
+```
 
 2. Look up your coins on the internet to find out what they are.  ProTip: Look them up on http://defipulse.com to see their _Total Value Locked (TVL)_.
 
@@ -222,3 +225,102 @@ Observation: _Users have very different transactions patterns, which we will try
 
 5. _You'll receive extra credit for work that goes "above and beyond" this assignment! _
 
+```{r}
+stableBorrows <- df %>%
+  filter(borrowRateMode == 'Stable') %>%
+  select(amount, borrowRate, reserve, reservePriceETH, reservePriceUSD, amountUSD) %>%
+  group_by(reserve) %>%
+  summarise(meanBorrowRate = mean(borrowRate), meanAmountUSD = mean(amountUSD)) %>%
+  arrange(-meanAmountUSD)
+
+kable(stableBorrows)
+ggplot(stableBorrows, aes(meanBorrowRate, meanAmountUSD)) + geom_point() + ggtitle("Stable Rate Borrows by Coin") + xlab("Average Borrow Rate (% APY)") + ylab("Average Amount Borrowed (USD)")
+```
+
+```{r}
+variableBorrows <- df %>%
+  filter(borrowRateMode == 'Variable') %>%
+  select(amount, borrowRate, reserve, reservePriceETH, reservePriceUSD, amountUSD, variableBorrowRate) %>%
+  group_by(reserve) %>%
+  summarise(meanBorrowRate = mean(borrowRate), meanAmountUSD = mean(amountUSD)) %>%
+  arrange(-meanAmountUSD)
+  
+kable(variableBorrows)
+ggplot(variableBorrows, aes(meanBorrowRate, meanAmountUSD)) + geom_point() + ggtitle("Variable Rate Borrows by Coin") + xlab("Average Borrow Rate (% APY)") + ylab("Average Amount Borrowed (USD)")
+```
+```{r}
+allCoins <- df %>%
+  group_by(reserve) %>%
+  count(reserve) %>%
+  arrange(-n)
+
+kable(allCoins)
+```
+
+
+```{r}
+stableCoins <- df %>%
+  filter(reserve == 'USDT' | reserve == 'USDC' | reserve == 'GUSD' | reserve == 'DAI' | reserve == 'WBTC' | reserve == 'SUSD' | reserve == 'TUSD') %>%
+  group_by(reserve) %>%
+  count(reserve) %>%
+  arrange(-n)
+
+kable(stableCoins)
+```
+```{r}
+stableCoinTransactions <- df %>%
+  filter(reserve %in% stableCoins$reserve) %>%
+  group_by(reserve) %>% 
+  count(type) %>% 
+  mutate(percent = n/sum(n)*100)
+
+kable(stableCoinTransactions)
+```
+```{r}
+ammCoins <- df %>%
+  filter(grepl('Amm', reserve))%>%
+  group_by(reserve) %>%
+  count(reserve) %>%
+  arrange(-n)
+
+ammCoinTransactions <- df %>%
+  filter(reserve %in% ammCoins$reserve) %>%
+  group_by(reserve) %>% 
+  count(type) %>% 
+  mutate(percent = n/sum(n)*100)
+  
+kable(ammCoinTransactions)
+```
+
+
+```{r}
+unstableCoins <- df%>%
+  filter(! reserve %in% stableCoins$reserve & ! reserve %in% ammCoins$reserve) %>%
+  group_by(reserve) %>%
+  count(reserve) %>%
+  arrange(-n)
+
+unstableCoinTransactions <- df %>%
+  filter(reserve %in% unstableCoins$reserve) %>%
+  group_by(reserve) %>% 
+  count(type) %>% 
+  mutate(percent = n/sum(n)*100)
+
+kable(unstableCoinTransactions)
+```
+```{r}
+borrowRateSwaps <- df %>%
+  filter(type == 'swap') %>%
+  select(borrowRateModeFrom, borrowRateModeTo, reserve, variableBorrowRate, stableBorrowRate) %>%
+  group_by(borrowRateModeFrom)
+
+variableSwaps <- borrowRateSwaps %>%
+  filter(borrowRateModeFrom == 'Variable')
+
+stableSwaps <- borrowRateSwaps %>%
+  filter(borrowRateModeFrom  == 'Stable')
+
+ggplot(variableSwaps, aes(variableBorrowRate, stableBorrowRate)) + geom_point() + ggtitle("Swaps from Variable to Stable Borrows")
+ggplot(stableSwaps, aes(stableBorrowRate, variableBorrowRate)) + geom_point() + ggtitle("Swaps from Stable to Variable Borrows")
+
+```
