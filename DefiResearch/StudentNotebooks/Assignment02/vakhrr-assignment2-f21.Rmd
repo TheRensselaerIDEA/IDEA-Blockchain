@@ -266,3 +266,50 @@ Observation: _Users have very different transactions patterns, which we will try
 
 5. _You'll receive extra credit for work that goes "above and beyond" this assignment! _
 
+
+
+
+
+
+
+
+```{r}
+
+#Data for Stable Coins
+
+StableCoinSummary <- df %>% filter(reserve %in% reservecoins$reserve) %>%
+  filter(reserve == "BUSD" | reserve == "DAI" | reserve == "GUSD" | reserve == "SUSD" | reserve == "TUSD"| reserve == "USDC" | reserve == "USDT") %>%
+  group_by(reserve) %>% 
+  count(type) %>% 
+  mutate(percent = n/sum(n)*100) %>%
+  group_by(type) %>%
+  summarize(percentage_mean = mean(percent), percentage_sd = sd(percent))
+  
+kable(StableCoinSummary) 
+
+
+```
+
+```{r}
+
+#Data for Unstable Coins
+
+UnstableCoinSummary <- df %>% filter(reserve %in% reservecoins$reserve) %>%
+  filter(reserve != "BUSD" & reserve != "DAI" & reserve != "GUSD" & reserve != "SUSD" & reserve != "TUSD"& reserve != "USDC" & reserve != "USDT" & type != 'liquidation') %>%
+  group_by(reserve) %>% 
+  count(type) %>% 
+  mutate(percent = n/sum(n)*100) %>%
+  group_by(type) %>%
+  summarize(percentage_mean = mean(percent), percentage_sd = sd(percent))
+  
+
+kable(UnstableCoinSummary) 
+```
+
+
+
+Stable Coins = {busd, dai, gusd, susd, tusd, usdc, usdt}
+
+The idea for this little exploration was to see if there is any sort of pattern in Stable vs Unstable types of coins. Although there are many different kinds of unstable coins, it looks like we can see that there are some notable differences between stable and unstable coins. The absolute majority of unstable coins is used for deposits and redeem, while only about 12% combined are used for borrowing and repayments. At the same time, stable coins are used much more evenly in terms of operations being performed with a bit more use of borrow and deposit operations. 
+
+It is important to note, however, that although there looks to be some trend in the data, the standard deviation is relatively high (even in stable coins which was a bit of surprise), which means that all coins are still used rather differently no matter what 'group' they belong to. 
