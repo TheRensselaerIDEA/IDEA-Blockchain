@@ -103,7 +103,9 @@ variableSwaps <- borrowRateSwaps %>%
 varToStable <- ggplot(variableSwaps, aes(variableBorrowRate, stableBorrowRate)) +
   geom_point(aes(color = reserve)) +
   ggtitle("At What Rates are Users Swapping from Variable to Stable Borrows?") +
-  geom_abline(slope = 1, intercept = 0)
+  geom_abline(slope = 1, intercept = 0) + 
+  xlab("Variable Borrow Rate (%APY)") +
+  ylab("Stable Borrow Rate (%APY)")
 ggplotly(varToStable)
 ```
 
@@ -114,7 +116,9 @@ stableSwaps <- borrowRateSwaps %>%
 stableToVar <- ggplot(stableSwaps, aes(stableBorrowRate, variableBorrowRate)) +
   geom_point(aes(color = stableSwaps$reserve)) +
   ggtitle("At What Rates are Users Swapping from Stable to Variable Borrows?") +
-  geom_abline(slope = 1, intercept = 0)
+  geom_abline(slope = 1, intercept = 0)+ 
+  ylab("Variable Borrow Rate (%APY)") +
+  xlab("Stable Borrow Rate (%APY)")
 ggplotly(stableToVar)
 ```
 
@@ -136,7 +140,9 @@ stableBorrowsUSDT <- borrowsUSDT %>%
 
 stableRatesOverTime <- ggplot(stableBorrowsUSDT, aes(datetime, borrowRate)) +
   geom_point(aes(color = reserve)) + 
-  ggtitle("How do the Stable Borrow Rates of USDT, USDC, and DAI Change Over Time?")
+  ggtitle("How do Stable Borrow Rates Change Over Time?") +
+  xlab("Date") + 
+  ylab("Borrow Rate (%APY)")
 
 ggplotly(stableRatesOverTime)
 ```
@@ -149,9 +155,11 @@ Much like in the previous two charts, we see these three reserves exhibiting ver
 variableBorrowsUSDT <- borrowsUSDT %>%
   filter(borrowRateMode == 'Variable')
 
-varRatesOverTime <- ggplot(variableBorrowsUSDT, aes(as_datetime(timestamp), borrowRate)) +
+varRatesOverTime <- ggplot(variableBorrowsUSDT, aes(datetime, borrowRate)) +
   geom_point(aes(color = reserve)) + 
-  ggtitle("Variable Borrow Rates Over Time (USDT)")
+  ggtitle("How Do Variable Borrow Rates Change Over Time?")+
+  xlab("Date") + 
+  ylab("Borrow Rate (%APY)")
 
 ggplotly(varRatesOverTime)
 ```
