@@ -266,3 +266,22 @@ Observation: _Users have very different transactions patterns, which we will try
 
 5. _You'll receive extra credit for work that goes "above and beyond" this assignment! _
 
+```{r}
+library(ggplot2)
+
+x_ax <- c()
+for (t in levels(df$type)) {
+  x_ax <- c(x_ax,rep(t,3))
+}
+condition <- rep(levels(df$borrowRateMode),6)
+amount <- c()
+for (t in levels(df$type)) {
+  for (brm in levels(df$borrowRateMode)) {
+    temp <- df %>% filter(type == t, borrowRateMode == brm)
+    amount <- c(amount,mean(temp$amount))
+  }
+}
+data <- data.frame(x_ax,condition,amount)
+ggplot(data, aes(fill=condition, y=amount, x=x_ax)) +
+  geom_bar(position="dodge", stat="identity")
+```
