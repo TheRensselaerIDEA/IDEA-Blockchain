@@ -1,0 +1,122 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+#import libraries
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dplyr)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+if (!require("devtools")) {
+  install.packages("devtools")
+  library(devtools)
+}
+if (!require("ggfortify")) {
+  install.packages("ggfortify")
+  library(ggfortify)
+}
+if (!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+if (!require("survival")) {
+  install.packages("survival")
+  library(survival)
+}
+```
+
+```{r}
+borrows <- read_csv('../Data/borrows.csv')
+deposits <- read_csv('../Data/deposits.csv')
+raw_df <- read_rds('../Data/transactions.Rds')
+```
+
+```{r}
+diffs <- raw_df %>% 
+  filter(type=="borrow" | type=="deposit") %>%
+  select(timestamp,user,type,amountUSD) %>%
+  arrange(user,timestamp)
+m <- max(diffs$timestamp)
+final <- data.frame(user=numeric(0),timediff=numeric(0),status=numeric(0))
+
+for (u in unique(diffs$user)) {
+  x <- diffs[diffs$user==u,]
+  minBorrow <- m
+  minDeposit <- m
+  for (row in 1:nrow(x)) {
+    if (minBorrow > x[row,"timestamp"] & x[row,"type"] == "borrow") {
+      minBorrow <- x[row,"timestamp"]
+    }
+    if (minDeposit > x[row,"timestamp"] & x[row,"type"] == "deposit") {
+      minDeposit <- x[row,"timestamp"]
+    }
+  }
+  if (minBorrow-minDeposit < 0) {
+    final[nrow(final)+1,] <- c(u,(minBorrow-minDeposit)/86400,0)
+  } else if (minBorrow-minDeposit > 0) {
+    final[nrow(final)+1,] <- c(u,(minBorrow-minDeposit)/86400,1)
+  } else {
+    next
+  }
+}
+```
+
+```{r}
+ggplot(final, aes(x=timediff)) + geom_histogram()
+```
+
+```{r}
+km <- with(final, Surv(timediff, status))
+head(km,80)
+```
+
+```{r}
+final <- final %>%
+  filter(timediff > 0)
+km_fit <- survfit(Surv(timediff, status) ~ 1, data=final)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
+autoplot(km_fit,xlab="time (hours)",ylab="Survival Rate",title="Survival Rate of Deposit before the first Borrow")
+```
+
+Time from deposit until first borrow
+How many transactions/time it takes to empty deposit fully
+Net amount transacted each day

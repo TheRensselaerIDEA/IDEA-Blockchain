@@ -58,6 +58,13 @@ if (!require("xts")) {
   install.packages("xts")
   library(xts)
 }
+if (!require("plotly")) {
+  install.packages("plotly")
+  library(plotly)
+}
+if(!require("lubridate")) {
+  library(lubridate)
+}
 
 ```
 # Prepare Transaction Data and Explore
@@ -193,32 +200,163 @@ ggplot(df.rusers,aes(user, timestamp,color=type)) +
 
 Observation: _Users have very different transactions patterns, which we will try to better understand. _
 
+For readability in the future let's add a column to the data with the datetimes of each transaction.
+```{r}
+df <- df %>%
+  mutate(datetime = as_datetime(timestamp))
+```
 
-# Activities
-##$\color{blue}{Exercise~1} (10 pts)$  
+```{r}
+stableBorrows <- df %>%
+  filter(borrowRateMode == 'Stable') %>%
+  select(amount, borrowRate, reserve, reservePriceETH, reservePriceUSD, amountUSD) %>%
+  group_by(reserve) %>%
+  summarise(meanBorrowRate = mean(borrowRate), meanAmountUSD = mean(amountUSD)) %>%
+  arrange(-meanAmountUSD)
 
-1. Divide the top 20 reserve coins between your team members so each team member has the same amount of coins; feel free to add or subtract coins if necessary.
+kable(stableBorrows)
+ggplot(stableBorrows, aes(meanBorrowRate, meanAmountUSD)) + geom_point() + ggtitle("Stable Rate Borrows by Coin") + xlab("Average Borrow Rate (% APY)") + ylab("Average Amount Borrowed (USD)")
+```
 
-2. Look up your coins on the internet to find out what they are.  ProTip: Look them up on http://defipulse.com to see their _Total Value Locked (TVL)_.
+```{r}
+variableBorrows <- df %>%
+  filter(borrowRateMode == 'Variable') %>%
+  select(amount, borrowRate, reserve, reservePriceETH, reservePriceUSD, amountUSD, variableBorrowRate) %>%
+  group_by(reserve) %>%
+  summarise(meanBorrowRate = mean(borrowRate), meanAmountUSD = mean(amountUSD)) %>%
+  arrange(-meanAmountUSD)
+  
+kable(variableBorrows)
+ggplot(variableBorrows, aes(meanBorrowRate, meanAmountUSD)) + geom_point() + ggtitle("Variable Rate Borrows by Coin") + xlab("Average Borrow Rate (% APY)") + ylab("Average Amount Borrowed (USD)")
+```
+```{r}
+allCoins <- df %>%
+  group_by(reserve) %>%
+  count(reserve) %>%
+  arrange(-n)
 
-3. Examine the percentage of transaction types for your coins.  Hypothesize why a given coin might have more of one type of transaction than another.
-
-4. _Prepare one slide with the findings for each of your coins._ (one slide summarizing each coin)
-
-5. Coordinate with your team, to combine each of your member's coin descriptions into a single presentation.  Please develop a common format or template for presenting your coin summaries so that the common information for a coin (e.g. TVL) is shown in the same format. (Your slide summaries should look the same!)
-
-6. Be prepared to present your team presentation to your client in class on Thursday 9/16.
+kable(allCoins)
+```
 
 
-##$\color{blue}{Exercise~2} (10 pts)$ 
+```{r}
+stableCoins <- df %>%
+  filter(reserve == 'USDT' | reserve == 'USDC' | reserve == 'GUSD' | reserve == 'DAI' | reserve == 'WBTC' | reserve == 'SUSD' | reserve == 'TUSD') %>%
+  group_by(reserve) %>%
+  count(reserve) %>%
+  arrange(-n)
 
-1. Perform a "creative exploration" of some aspect of the Defi data that you find interesting.   Add your work in this notebook. _Your work should include at least one data visualization._
+kable(stableCoins)
+```
+```{r}
+stableCoinTransactions <- df %>%
+  filter(reserve %in% stableCoins$reserve) %>%
+  group_by(reserve) %>% 
+  count(type) %>% 
+  mutate(percent = n/sum(n)*100)
 
-2. Put your work in this notebook.
+kable(stableCoinTransactions)
+```
+```{r}
+ammCoins <- df %>%
+  filter(grepl('Amm', reserve))%>%
+  group_by(reserve) %>%
+  count(reserve) %>%
+  arrange(-n)
 
-3. Write a paragraph describing your findings in the context of DeFi. 
+ammCoinTransactions <- df %>%
+  filter(reserve %in% ammCoins$reserve) %>%
+  group_by(reserve) %>% 
+  count(type) %>% 
+  mutate(percent = n/sum(n)*100)
+  
+kable(ammCoinTransactions)
+```
 
-4. Be prepared to share (2 minutes) in team meeting.
 
-5. _You'll receive extra credit for work that goes "above and beyond" this assignment! _
+```{r}
+unstableCoins <- df%>%
+  filter(! reserve %in% stableCoins$reserve & ! reserve %in% ammCoins$reserve) %>%
+  group_by(reserve) %>%
+  count(reserve) %>%
+  arrange(-n)
 
+unstableCoinTransactions <- df %>%
+  filter(reserve %in% unstableCoins$reserve) %>%
+  group_by(reserve) %>% 
+  count(type) %>% 
+  mutate(percent = n/sum(n)*100)
+
+kable(unstableCoinTransactions)
+```
+```{r}
+
+borrowRateSwaps <- df %>%
+  filter(type == 'swap') %>%
+  select(borrowRateModeFrom, borrowRateModeTo, reserve, variableBorrowRate, stableBorrowRate, timestamp, user, onBehalfOf) %>%
+  group_by(borrowRateModeFrom) %>%
+  mutate(vsRatio = variableBorrowRate/stableBorrowRate)
+```
+
+```{r}
+variableSwaps <- borrowRateSwaps %>%
+  filter(borrowRateModeFrom == 'Variable')
+
+varToStable <- ggplot(variableSwaps, aes(variableBorrowRate, stableBorrowRate)) +
+  geom_point(aes(color = variableSwaps$reserve)) +
+  ggtitle("Swaps from Variable to Stable Borrows") +
+  geom_abline(slope = 1, intercept = 0)
+ggplotly(varToStable)
+```
+```{r}
+stableSwaps <- borrowRateSwaps %>%
+  filter(borrowRateModeFrom  == 'Stable')
+
+stableToVar <- ggplot(stableSwaps, aes(stableBorrowRate, variableBorrowRate)) +
+  geom_point(aes(color = stableSwaps$reserve)) +
+  ggtitle("Swaps from Stable to Variable Borrows") +
+  geom_abline(slope = 1, intercept = 0)
+ggplotly(stableToVar)
+```
+```{r}
+
+brsUSDT <- borrowRateSwaps %>%
+  filter(reserve == 'USDT')%>%
+  group_by(user) %>%
+  mutate(vsRatio = variableBorrowRate/stableBorrowRate)
+
+swapRatioOverTime <- ggplot(borrowRateSwaps, aes(as_datetime(timestamp), vsRatio)) +
+  geom_point(aes(color = borrowRateModeFrom)) + 
+  ggtitle("Variable/Stable Ratios Over Time (USDT)")
+
+ggplotly(swapRatioOverTime)
+```
+```{r}
+borrowsUSDT <- df %>%
+  filter(type=='borrow', reserve == 'USDT')
+
+stableBorrowsUSDT <- borrowsUSDT %>%
+  filter(borrowRateMode == 'Stable')
+
+stableRatesOverTime <- ggplot(stableBorrowsUSDT, aes(as_datetime(timestamp), borrowRate)) +
+  geom_point(aes(color = reserve)) + 
+  ggtitle("Stable Borrow Rates Over Time (USDT)")
+
+ggplotly(stableRatesOverTime)
+```
+Let's take a look at the stable borrow rates of USDT as they vary from week to week:
+```{r}
+stableBorrowsUSDT <- stableBorrowsUSDT %>%
+  mutate(timestampByWeek = floor_date(stableBorrowsUSDT$timestamp, unit = "week"))
+```
+
+```{r}
+variableBorrowsUSDT <- borrowsUSDT %>%
+  filter(borrowRateMode == 'Variable')
+
+varRatesOverTime <- ggplot(variableBorrowsUSDT, aes(as_datetime(timestamp), borrowRate)) +
+  geom_point(aes(color = reserve)) + 
+  ggtitle("Variable Borrow Rates Over Time (USDT)")
+
+ggplotly(varRatesOverTime)
+```
