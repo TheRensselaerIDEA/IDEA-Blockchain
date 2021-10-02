@@ -1,0 +1,207 @@
+---
+title: "DAR F21 Project Status"
+author: "Soumya Mishra"
+date: "10/01/2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DeFi"
+---
+
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+# CAUTION: DO NOT interrupt R as it installs packages!!
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dp)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+
+```
+
+
+```{r}
+#load Rds (binary version of csv file) into dataframe
+# Assumes this notebook is in: ~/IDEA-Blockchain/DefiResearch/StudentNotebooks/Assignment02
+df<-read_rds('../../Data/transactions.Rds')
+
+# Let's take a quick look at the first few observation
+head(df)
+```
+
+
+```{r}
+borrow.df<-df%>% filter(type=="borrow")%>%
+  select(user, timestamp, amountUSD)
+head(borrow.df)
+
+repay.df<-df%>% filter(type=="repay")%>%
+  select(user, timestamp, amountUSD)
+head(borrow.df)
+
+borrowRepay <- inner_join(borrow.df,repay.df,by="user")%>%
+  arrange(user)%>%
+  rename(borrowTime=timestamp.x)%>%
+  rename(repayTime = timestamp.y)%>%
+  rename(borrowAmt = amountUSD.x)%>%
+  rename(repayAmt = amountUSD.y)%>%
+  mutate(timeDiff = repayTime-borrowTime)%>%
+  mutate(amtPercent = 100*repayAmt/borrowAmt)%>%
+  filter(timeDiff>0)
+
+head(borrowRepay)
+
+```
+
+```{r}
+# Basic density
+p <- ggplot(borrowRepay, aes(x=timeDiff)) + 
+  geom_density()+
+  ggtitle("Time Difference Distribution")
+p
+
+# Add mean line
+#p+ geom_vline(aes(xintercept=mean(weight)),
+           # color="blue", linetype="dashed", size=1)
+```
+
+```{r}
+# Basic density
+p <- ggplot(borrowRepay, aes(x=log10(amtPercent))) + 
+  geom_density()+
+  ggtitle("Percent Repaid Distribution")
+p
+
+# Add mean line
+#p+ geom_vline(aes(xintercept=mean(weight)),
+           # color="blue", linetype="dashed", size=1)
+```
+
+```{r}
+# Basic density
+p <- ggplot(borrowRepay, aes(x=log(borrowAmt), y=log(repayAmt))) +  geom_abline(aes(intercept = 0, slope = 1), colour='#E41A1C') +
+  geom_point()+
+  ggtitle("Borrow vs Repay")
+p
+
+# Add mean line
+#p+ geom_vline(aes(xintercept=mean(weight)),
+           # color="blue", linetype="dashed", size=1)
+```
+
+
+## Weekly Work Summary	
+
+**NOTE:** Follow an outline format; use bullets to express individual points. 
+
+* RCS ID: mishrs4
+* Project Name: Defi
+* Summary of work since last week 
+
+    * Describe the important aspects of what you worked on and accomplished
+    
+* Summary of github commits 
+
+    * include branch name(s)
+    * include browsable links to all external files on github
+    * Include links to shared Shiny apps
+    
+* List of presentations,  papers, or other outputs
+
+ https://docs.google.com/presentation/d/1b1hLY8Kq4IC_KuOnCUTE1uq_Hb1qo6bex7BbdXuPlmE/edit#slide=id.gf11a6c1197_15_7
+ 
+ https://www.nerdwallet.com/mortgages/mortgage-rates
+
+## Personal Contribution	
+
+I graphed the data points for the time it took for a repayment in comparison to the borrow as well as the amounts. 
+
+## Discussion of Primary Findings 	
+
+The main question I was looking to answer is "How well does DeFi replicate traditional finance e.g. how long does it take to payback a loan? What is the rate of default?"
+
+Here are some questions I had and was looking into researching through the data.
+I found the Defi liquidation rate is approximately 1%, a rather small percentage. 
+I considered the total value of liquidation as how much value in the DeFi is lost. Perhaps I could set a starting value to 0 such that I could measure how much is lost in liquidation. A major question I had was how to separate out the pool of Defi data. What measures are relevant in analysis, perhaps Std. dev for risk analysis. Liquidation is so low and not comparable to loan a loan given the infinite nature of the data. I considered a survival model plot to analyze the data given it changes every day as there is no end point for the data's time. 
+
+I compared the rate of default to liquidation amongst Defi, mortgages, and student loans. Student loans default rate: 7.8%
+Mortgage default: 6.38%
+
+These values are much larger than the 1% of Defi, but are not really comparable given the nature of Defi and the loan terms of mortgages and student loans. 
+
+I researched the different types of loans to see which if any would be comparable to Defi:
+Mortgage - fannie mae vs freddie mac vs ginnie mae ( government )
+Student - banks, lenders, federal gov. subsidized/unsubsidized
+Home equity - same as line of credit?
+Leveraged stock/portfolios - technically borrowing money for non concrete values-stock
+Personal - does it matter what the loan is for?
+Title - small amount, not comparable to DeFi because of size of loan?
+Leveraged loan - known higher risk of default, how does it compare to DeFi coins?
+
+
+Which is most applicable to compare DeFi to and does federally backed vs personal vs bank vs lender groups matter given DeFi is not government backed?
+
+What is the stability of the different financial instruments and how does that compare to DeFi coins?
+Mortgage - probably the most stable since it has a lean on the physical real estate?
+Student - backed by degree, but varies depending on the usefulness of the degree in getting a job to pay it back
+Home Equity - 2nd lean on physical real estate, less stable than mortgage but more than student loan?
+Leveraged Stock - short selling, risky, and very unpredictable? Backed in 10% ratio
+Personal - not backed by anything other personal credit history
+Title - not backed by anything other than personal credit, but the amount is small so more stable than personal?
+Leveraged loan - high risk of default especially given poor credit history/already in debt
+
+Some things I would like to look into are:
+Compare rates of default
+Compare volatility of stock market index and defi coin
+Take a hypothetical portfolio of 80-20 S&P and T-bonds
+Take a hypothetical indexed portfolio of the DeFi coin market, let’s say by mkt weight
+Compare the risk values, the beta, the std, dev over the last year or so
+Compare rates of default between loan types and DeFi
+
+
+I would like to eventually do a survival analysis on the data between borrows and repays. Currently I have analyzed how the time it takes to repay an amount borrowed looks over time. The graphs show in comparison to traditional finance DeFi appears to be repaid more regularly with points within the borrow and repayment as equal or less than. This is displayed in the graph with the line y=x to demonstrate. 
+
+
+
