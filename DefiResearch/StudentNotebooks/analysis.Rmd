@@ -15,17 +15,10 @@ if (!require("ggplot2")) {
   install.packages("ggplot2")
   library(ggplot2)
 }
-
 if (!require("knitr")) {
   install.packages("knitr")
   library(knitr)
 }
-
-if (!require("dplyr")) {
-  install.packages("dplyr")
-  library(dplyr)
-}
-
 if (!require("RColorBrewer")) {
   install.packages("RColorBrewer")
   library(RColorBrewer)
@@ -45,6 +38,10 @@ if (!require("ggbeeswarm")) {
 if (!require("xts")) {
   install.packages("xts")
   library(xts)
+}
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dplyr)
 }
 if (!require("devtools")) {
   install.packages("devtools")
@@ -76,28 +73,28 @@ diffs <- raw_df %>%
   select(timestamp,user,type,amountUSD) %>%
   arrange(user,timestamp)
 m <- max(diffs$timestamp)
+
 final <- data.frame(user=numeric(0),timediff=numeric(0),status=numeric(0))
 
 for (u in unique(diffs$user)) {
-  x <- diffs[diffs$user==u,]
-  minBorrow <- m
-  minDeposit <- m
-  for (row in 1:nrow(x)) {
-    if (minBorrow > x[row,"timestamp"] & x[row,"type"] == "borrow") {
-      minBorrow <- x[row,"timestamp"]
-    }
-    if (minDeposit > x[row,"timestamp"] & x[row,"type"] == "deposit") {
-      minDeposit <- x[row,"timestamp"]
-    }
-  }
-  if (minBorrow-minDeposit < 0) {
-    final[nrow(final)+1,] <- c(u,(minBorrow-minDeposit)/86400,0)
-  } else if (minBorrow-minDeposit > 0) {
-    final[nrow(final)+1,] <- c(u,(minBorrow-minDeposit)/86400,1)
-  } else {
-    next
-  }
+ x <- diffs[diffs$user==u,]
+ minBorrow <- m
+ minDeposit <- m
+ for (row in 1:nrow(x)) {
+   if (minBorrow > x[row,"timestamp"] & x[row,"type"] == "borrow") {
+     minBorrow <- x[row,"timestamp"]
+   }
+   if (minDeposit > x[row,"timestamp"] & x[row,"type"] == "deposit") {
+     minDeposit <- x[row,"timestamp"]
+   }
+ }
+ if (minBorrow-minDeposit == 0) {
+   final[nrow(final)+1,] <- c(u,(minBorrow-minDeposit)/86400,0)
+ } else{
+   final[nrow(final)+1,] <- c(u,(minBorrow-minDeposit)/86400,1)
+ }
 }
+head(final,20)
 ```
 
 ```{r}
@@ -114,9 +111,59 @@ final <- final %>%
   filter(timediff > 0)
 km_fit <- survfit(Surv(timediff, status) ~ 1, data=final)
 summary(km_fit, times = c(1,30,60,90*(1:10)))
-autoplot(km_fit,xlab="time (hours)",ylab="Survival Rate",title="Survival Rate of Deposit before the first Borrow")
+autoplot(km_fit,xlab="time (days)",ylab="Survival Rate",title="Survival Rate of Deposit before the first Borrow")
 ```
 
-Time from deposit until first borrow
+```{r}
+diffs <- raw_df %>% 
+  filter(type=="liquidation" | type=="borrow") %>%
+  select(timestamp,user,type) %>%
+  arrange(user,timestamp)
+m <- max(diffs$timestamp)
+final <- data.frame(user=numeric(0),timediff=numeric(0),status=numeric(0))
+
+for (u in unique(diffs$user)) {
+  x <- diffs[diffs$user==u,]
+  minBorrow <- m
+  minLiquidation <- m
+  for (row in 1:nrow(x)) {
+    if (minBorrow > x[row,"timestamp"] & x[row,"type"] == "borrow") {
+      minBorrow <- x[row,"timestamp"]
+    }
+    if (minLiquidation > x[row,"timestamp"] & x[row,"type"] == "liquidation") {
+      minLiquidation <- x[row,"timestamp"]
+    }
+  }
+  if (minBorrow-minLiquidation == 0) {
+   final[nrow(final)+1,] <- c(u,(minLiquidation-minBorrow)/86400,0)
+ } else{
+   final[nrow(final)+1,] <- c(u,(minLiquidation-minBorrow)/86400,1)
+ }
+}
+head(final,20)
+```
+
+```{r}
+ggplot(final, aes(x=timediff)) + geom_histogram()
+```
+
+```{r}
+km <- with(final, Surv(timediff, status))
+head(km,80)
+```
+
+```{r}
+final <- final %>%
+  filter(timediff > 0)
+km_fit <- survfit(Surv(timediff, status) ~ 1, data=final)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
+autoplot(km_fit,xlab="time (days)",ylab="Survival Rate",title="Survival Rate of Borrow before the first Liquidation")
+```
+
+
+Time from deposit until first borrow - x
+Survival of Borrows to Liquidations - x
 How many transactions/time it takes to empty deposit fully
 Net amount transacted each day
+Predict Liquidations based on survival rates, time to liquidate
+Users who liquidated vs had not

@@ -1,0 +1,197 @@
+---
+title: "DAR F21 Project Status Notebook Assignment 3"
+author: "Jaimin Vyas"
+date: "10-01-2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DeFi"
+---
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#import libraries
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dplyr)
+}
+if (!require("devtools")) {
+  install.packages("devtools")
+  library(devtools)
+}
+if (!require("ggfortify")) {
+  install.packages("ggfortify")
+  library(ggfortify)
+}
+if (!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+if (!require("survival")) {
+  install.packages("survival")
+  library(survival)
+}
+```
+
+```{r}
+raw_df <- read_rds('../../Data/transactions.Rds')
+```
+
+```{r}
+diffs <- raw_df %>% 
+  filter(type=="borrow" | type=="deposit") %>%
+  select(timestamp,user,type,amountUSD) %>%
+  arrange(user,timestamp)
+m <- max(diffs$timestamp)
+
+final <- data.frame(user=numeric(0),timediff=numeric(0),status=numeric(0))
+
+for (u in unique(diffs$user)) {
+ x <- diffs[diffs$user==u,]
+ minBorrow <- m
+ minDeposit <- m
+ for (row in 1:nrow(x)) {
+   if (minBorrow > x[row,"timestamp"] & x[row,"type"] == "borrow") {
+     minBorrow <- x[row,"timestamp"]
+   }
+   if (minDeposit > x[row,"timestamp"] & x[row,"type"] == "deposit") {
+     minDeposit <- x[row,"timestamp"]
+   }
+ }
+ if (minBorrow-minDeposit == 0) {
+   final[nrow(final)+1,] <- c(u,(minBorrow-minDeposit)/86400,0)
+ } else{
+   final[nrow(final)+1,] <- c(u,(minBorrow-minDeposit)/86400,1)
+ }
+}
+head(final,20)
+```
+
+```{r}
+ggplot(final, aes(x=timediff)) + geom_histogram()
+km <- with(final, Surv(timediff, status))
+head(km,80)
+final <- final %>%
+  filter(timediff > 0)
+km_fit <- survfit(Surv(timediff, status) ~ 1, data=final)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
+autoplot(km_fit,xlab="time (days)",ylab="Survival Rate",title="Survival Rate of Deposit before the first Borrow")
+```
+
+```{r}
+diffs <- raw_df %>% 
+  filter(type=="liquidation" | type=="borrow") %>%
+  select(timestamp,user,type) %>%
+  arrange(user,timestamp)
+m <- max(diffs$timestamp)
+final <- data.frame(user=numeric(0),timediff=numeric(0),status=numeric(0))
+
+for (u in unique(diffs$user)) {
+  x <- diffs[diffs$user==u,]
+  minBorrow <- m
+  minLiquidation <- m
+  for (row in 1:nrow(x)) {
+    if (minBorrow > x[row,"timestamp"] & x[row,"type"] == "borrow") {
+      minBorrow <- x[row,"timestamp"]
+    }
+    if (minLiquidation > x[row,"timestamp"] & x[row,"type"] == "liquidation") {
+      minLiquidation <- x[row,"timestamp"]
+    }
+  }
+  if (minBorrow-minLiquidation == 0) {
+   final[nrow(final)+1,] <- c(u,(minLiquidation-minBorrow)/86400,0)
+ } else{
+   final[nrow(final)+1,] <- c(u,(minLiquidation-minBorrow)/86400,1)
+ }
+}
+head(final,20)
+```
+
+```{r}
+ggplot(final, aes(x=timediff)) + geom_histogram()
+km <- with(final, Surv(timediff, status))
+head(km,80)
+final <- final %>%
+  filter(timediff > 0)
+km_fit <- survfit(Surv(timediff, status) ~ 1, data=final)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
+autoplot(km_fit,xlab="time (days)",ylab="Survival Rate",title="Survival Rate of Borrow before the first Liquidation")
+```
+
+## Weekly Work Summary	
+
+**NOTE:** Follow an outline format; use bullets to express individual points. 
+
+* RCS ID: vyasj2
+* Project Name: DeFi
+* Summary of work since last week 
+
+    * Describe the important aspects of what you worked on and accomplished
+    
+* Summary of github commits 
+
+    * Branch name: dar-vyasj2
+    * https://github.rpi.edu/DataINCITE/IDEA-Blockchain/tree/dar-vyasj2
+    
+* List of presentations, papers, or other outputs
+
+    * https://docs.google.com/presentation/d/1cBPMaj-quV0y45F9t3aXbeywlW4GOT8miq7E3wY-7d8/edit#slide=id.gf5261890f6_1_0
+    
+* All work was done by me, with help from https://rviews.rstudio.com/2017/09/25/survival-analysis-with-r/ for suvival analysis code
+
+## Personal Contribution	
+
+* The professors proposed the idea to use Survival Analysis to find the "survival rate" of deposits over time.
+
+## Discussion of Primary Findings
+
+* Primary Findings:
+
+    * I wanted to know how much time went by between a deposit and the first borrow by the same user, and a similar statistic for borrows and liquidations.
+    * As is seen in the notebook, I manipulated the original dataframe and reduced it down to only borrows and deposits, or only borrows and liquidations. I used base R to do this, because I could only get so far using dplyr, and at some point had to use a for loop to iterate over every user's transactions. I plan to see if I can rewrite the code using dplyer, but I expect that I will still have to utilize base R for part of it.
+    * I found that for borrows/deposits, around 20% of people borrow almost immediately after they deposit tokens into their account. After that, the curve seems to follow a fairly steady slope downward, and shows that nobody holds on to their deposit for more than 260 days, meaning that people are almost guaranteed to borrow after 2/3 of a year. This long discrepancy could be due to the fact that some people would forget about the money they deposited, or could account for yield farmers, people who deposit money to lend them out to other people, and collect interest based on that. For borrows/liquidations, I found that there was a fairly steady curve downward that ended at 260 days, just like the borrows/deposits survival curve. They both end at the same time most likely due to the fact that the data is recent, and the last timestamp would be the most recent datapoint.
+    
+## Future Steps
+
+* Discussion of next steps
+
+    * For the next steps, I would like to take a bit of a deeper dive into the transactions and calculate on average how many transactions or how much time it takes to empty a single deposit fully, after how many borrows or how much time people liquidate, as well as the net amount transacted every day. I think this would be useful information to know because it describes user interactions, and provides insight on how careful people are with their transactions.
