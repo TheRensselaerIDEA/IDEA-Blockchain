@@ -1,0 +1,375 @@
+---
+title: "DAR F21 Project Status Notebook Assignment 4"
+author: "Jason Podgorski (GitHub: podgoj)"
+date: "10/04/2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DeFi"
+---
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+       
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+if (!require("devtools")) {
+  install.packages("devtools")
+  library(devtools)
+}
+if (!require("zoo")) {
+  install.packages("zoo")
+  library(zoo)
+}
+if (!require("ggfortify")) {
+  install.packages("ggfortify")
+  library(ggfortify)
+}
+if (!require("tidyselect")) {
+  install.packages("tidyselect")
+  library(tidyselect)
+}
+update.packages(ask = FALSE)
+})
+```
+
+# Summary of Work
+
+These past two weeks I wanted to take a deep dive into common patterns between two separate groups: liquidators and nonliquidators. I wanted to look at features that would be a good indicator if a user is likely to fall into a particular group.
+
+# GitHub Commits
+
+Branch Name: dar-podgoj
+
+# Personal Contribution
+
+All of the work in this notebook is my own.
+
+
+```{r}
+# load Rds (binary version of csv file) into dataframe
+df <- read_rds('../../Data/transactions.Rds')
+tail(df, 20)
+```
+
+```{r}
+# create a new column in date format using timestamp variable
+df <- df[order(df$timestamp),]
+posixt <- as.POSIXct(df$timestamp, origin = "1970-01-01")
+df$date <- as.Date(posixt)
+```
+
+```{r}
+# get pool of unique users who have liquidated in their history
+liquidators <- df[df$type == "liquidation",]
+liquidators <- unique(liquidators$user)
+liquidators_df <- df[df$user %in% liquidators,]
+length(liquidators)
+```
+
+```{r}
+# get pool of unique users who have not liquidated in their history
+nonliquidators_df <- df[!(df$user %in% liquidators),]
+nonliquidators <- unique(nonliquidators_df$user)
+length(nonliquidators)
+```
+
+```{r}
+# Compare the number of liquidating users with non-liquidating users in AAVE
+total_users <- length(unique(df$user))
+liquidator_counts_df <- data.frame(
+  name = c("Liquidators", "Nonliquidators"),  
+  value = c(length(liquidators) / total_users, length(nonliquidators) / total_users)
+  )
+ggplot(liquidator_counts_df, aes(x = name, y = value)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = round(value, digits = 2)), vjust = -0.2) +
+  ylab("Percent") +
+  xlab("Group") +
+  ggtitle("Percent of Users Who Have Liquidated")
+```
+
+```{r}
+# Compare the borrow mode of liquidators and non-liquidators
+
+# Number of users for each option (Ex. borrower who's a liquidator and chose a stable rate)
+stable_liquid <- nrow(liquidators_df[liquidators_df$borrowRateMode == "Stable",])
+variable_liquid <- nrow(liquidators_df[liquidators_df$borrowRateMode == "Variable",])
+stable_nonliquid <- nrow(nonliquidators_df[nonliquidators_df$borrowRateMode == "Stable",])
+variable_nonliquid <- nrow(nonliquidators_df[nonliquidators_df$borrowRateMode == "Variable",])
+
+sum_liquid <- stable_liquid + variable_liquid
+sum_nonliquid <- stable_nonliquid + variable_nonliquid
+
+# Create dataframe for plot
+borrowing_df <- data.frame(
+  name = c("Liquidators", "Liquidators", "Nonliquidators", "Nonliquidators"),
+  borrowMode = c("Stable", "Variable", "Stable", "Variable"),
+  value = c(stable_liquid/sum_liquid, variable_liquid/sum_liquid, stable_nonliquid/sum_nonliquid, variable_nonliquid/sum_nonliquid)
+  )
+
+ggplot(borrowing_df, aes(factor(name), value, fill = borrowMode)) + 
+  geom_bar(stat="identity", position = "dodge") +
+  geom_text(aes(label = round(value, digits = 2)), vjust = -0.2,
+            position = position_dodge(0.9)) +
+  xlab("Group") +
+  ylab("Percent") +
+  ggtitle("Distribution of Borrow Modes")
+```
+
+```{r,fig.width=16,fig.height=8}
+liquidators_borrows_df <- liquidators_df[liquidators_df$type == "borrow",]
+
+liquidators_borrows_df <- liquidators_borrows_df %>%
+  group_by(reserve, borrowRateMode) %>%
+  filter(n() > 100) %>%
+  summarize(liquid_borrowRate = mean(borrowRate))
+
+ggplot(liquidators_borrows_df, aes(factor(reserve), liquid_borrowRate, fill = borrowRateMode)) + 
+  geom_bar(stat="identity", position = "dodge") +
+  geom_text(aes(label = round(liquid_borrowRate, digits = 1)), vjust = -0.2,
+            position = position_dodge(0.9)) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  ggtitle("Distribution of Borrow Rates by Coin from Liquidators")
+```
+
+```{r,fig.width=16,fig.height=8}
+nonliquidators_borrows_df <- nonliquidators_df[nonliquidators_df$type == "borrow",]
+
+nonliquidators_borrows_df <- nonliquidators_borrows_df %>%
+  group_by(reserve, borrowRateMode) %>%
+  filter(n() > 100) %>%
+  summarize(nonliquid_borrowRate = mean(borrowRate))
+
+ggplot(nonliquidators_borrows_df, aes(factor(reserve), nonliquid_borrowRate, fill = borrowRateMode)) + 
+  geom_bar(stat="identity", position = "dodge") +
+  geom_text(aes(label = round(nonliquid_borrowRate, digits = 1)), vjust = -0.2,
+            position = position_dodge(0.9)) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  ggtitle("Distribution of Borrow Rates by Coin from Nonliquidators")
+```
+
+```{r}
+borrows_df <- merge(liquidators_borrows_df, nonliquidators_borrows_df)
+ggplot(borrows_df, aes(x = reserve, y = liquid_borrowRate,
+                       fill = borrowRateMode)) + 
+  geom_bar(stat="identity", position = "dodge") +
+  geom_text(aes(label = round(liquid_borrowRate, digits = 1)), vjust = -0.2,
+            position = position_dodge(0.9)) +
+  ggtitle("Distribution of Borrow Rates for Popular Coins")
+```
+
+```{r}
+borrows_df
+```
+
+```{r}
+liquidators_borrows_df <- liquidators_df[liquidators_df$type == "borrow",]
+liquidators_amounts_df <- liquidators_borrows_df %>%
+  group_by(reserve) %>%
+  filter(n() > 100) %>%
+  summarize(liquid_amount = median(amountUSD))
+head(liquidators_amounts_df)
+```
+
+```{r}
+nonliquidators_borrows_df <- nonliquidators_df[nonliquidators_df$type == "borrow",]
+nonliquidators_amounts_df <- nonliquidators_borrows_df %>%
+  group_by(reserve) %>%
+  filter(n() > 100) %>%
+  summarize(nonliquid_amount = median(amountUSD))
+```
+
+```{r}
+amounts_df <- merge(liquidators_amounts_df, nonliquidators_amounts_df)
+amounts_df
+```
+
+```{r}
+ggplot(amounts_df, aes(x = reserve)) +
+  geom_point(aes(y = liquid_amount, color = "Liquidator")) +
+  geom_point(aes(y = nonliquid_amount, color = "Nonliquidator")) +
+  ylab("Amount USD") +
+  ggtitle("Average Borrow USD by Liquidation Group")
+```
+
+```{r}
+liquid_borrow_repay <- nrow(liquidators_df[liquidators_df$type == "borrow",]) /   nrow(liquidators_df[liquidators_df$type == "repay",])
+nonliquid_borrow_repay <- nrow(nonliquidators_df[nonliquidators_df$type == "borrow",]) / nrow(nonliquidators_df[nonliquidators_df$type == "repay",])
+nrow(liquidators_df[liquidators_df$type == "borrow",])
+nrow(liquidators_df[liquidators_df$type == "repay",])
+nrow(nonliquidators_df[nonliquidators_df$type == "borrow",])
+nrow(nonliquidators_df[nonliquidators_df$type == "repay",])
+
+# Create dataframe for plot
+borrow_repay_df <- data.frame(
+  Liquidators = c(liquid_borrow_repay, 
+                  nrow(liquidators_df[liquidators_df$type == "borrow",]),
+                  nrow(liquidators_df[liquidators_df$type == "repay",])),
+  Nonliquidators = c(nonliquid_borrow_repay, 
+                     nrow(nonliquidators_df[nonliquidators_df$type == "borrow",]), 
+                     nrow(nonliquidators_df[nonliquidators_df$type == "repay",]))
+  )
+ggplot(borrow_repay_df, aes(x = liqud, y = value)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = round(value, digits = 2)), vjust = -0.2) +
+  ylab("Percent") +
+  xlab("Group") +
+  ggtitle("Percent of Users Who Have Liquidated")
+```
+
+```{r}
+liquid_transacts <- liquidators_borrows_df %>%
+  group_by(user) %>%
+  summarize(n = n())
+mean(liquid_transacts$n)
+median(liquid_transacts$n)
+max(liquid_transacts$n)
+```
+
+```{r}
+nonliquid_transacts <- nonliquidators_borrows_df %>%
+  group_by(user) %>%
+  summarize(n = n())
+mean(nonliquid_transacts$n)
+median(nonliquid_transacts$n)
+max(nonliquid_transacts$n)
+```
+
+```{r}
+df_all <- data.frame(
+  user = c(liquidators, nonliquidators)
+)
+df_all$value <- ifelse(df_all$user %in% liquidators, 1, 0)
+df_all$group <- ifelse(df_all$user %in% liquidators, "Liquidator", "Nonliquidator")
+head(df_all)
+```
+
+```{r}
+liquid_borrows <- liquidators_df %>%
+  group_by(user) %>%
+  filter(type == "borrow") %>%
+  summarise(borrows = n())
+liquid_repays <- liquidators_df %>%
+  group_by(user) %>%
+  filter(type == "repay") %>%
+  summarise(repays = n())
+nonliquid_borrows <- nonliquidators_df %>%
+  group_by(user) %>%
+  filter(type == "borrow") %>%
+  summarise(borrows = n())
+nonliquid_repays <- nonliquidators_df %>%
+  group_by(user) %>%
+  filter(type == "repay") %>%
+  summarise(repays = n())
+user_borrows <- rbind(liquid_borrows, nonliquid_borrows)
+user_repays <- rbind(liquid_repays, nonliquid_repays)
+```
+
+```{r}
+#head(user_borrows[user_borrows$user == "1.325103e+44",], 20)
+
+```
+
+
+```{r}
+df_all <- merge(df_all, user_borrows, all = TRUE)
+df_all <- merge(df_all, user_repays, all = TRUE)
+df_all[is.na(df_all)] <- 0
+head(df_all)
+```
+
+```{r}
+#head(liquidators_borrows_df)
+stable_rate_dai <- df %>%
+  group_by(user) %>%
+  filter(type == "borrow" & borrowRateMode == "Stable" & reserve == as.character("DAI")) %>%
+  summarize(mean_stable_rate_dai = mean(borrowRate))
+stable_rate_usdc <- df %>%
+  group_by(user) %>%
+  filter(type == "borrow" & borrowRateMode == "Stable" & reserve == as.character("USDC")) %>%
+  summarize(mean_stable_rate_usdc = mean(borrowRate))
+stable_rate_usdt <- df %>%
+  group_by(user) %>%
+  filter(type == "borrow" & borrowRateMode == "Stable" & reserve == as.character("USDT")) %>%
+  summarize(mean_stable_rate_usdt = mean(borrowRate))
+variable_rate_dai <- df %>%
+  group_by(user) %>%
+  filter(type == "borrow" & borrowRateMode == "Variable" & reserve == as.character("DAI")) %>%
+  summarize(mean_variable_rate_dai = mean(borrowRate))
+variable_rate_usdc <- df %>%
+  group_by(user) %>%
+  filter(type == "borrow" & borrowRateMode == "Variable" & reserve == as.character("USDC")) %>%
+  summarize(mean_variable_rate_usdc = mean(borrowRate))
+variable_rate_usdt <- df %>%
+  group_by(user) %>%
+  filter(type == "borrow" & borrowRateMode == "Variable" & reserve == as.character("USDT")) %>%
+  summarize(mean_variable_rate_usdt = mean(borrowRate))
+```
+
+```{r}
+head(variable_rate_dai)
+```
+
+
+```{r}
+df_all <- merge(df_all, stable_rate_dai, all = TRUE)
+df_all <- merge(df_all, variable_rate_dai, all = TRUE)
+df_all <- merge(df_all, stable_rate_usdc, all = TRUE)
+df_all <- merge(df_all, variable_rate_usdc, all = TRUE)
+df_all <- merge(df_all, stable_rate_usdt, all = TRUE)
+df_all <- merge(df_all, variable_rate_usdt, all = TRUE)
+tail(df_all, 20)
+```
+
+```{r}
+#df_all_matrix <- data.matrix(df_all[,-1])
+df_all <- na.omit(df_all)
+#which(is.na(df_all))
+#is.na()
+df_all
+nrow(df_all)
+nrow(df_all[df_all$value == 1,])
+```
+
+```{r}
+df_all <- df_all[-c(14),]
+df_all
+k2 <- kmeans(df_all[c(-1,-2,-3)], centers = 2, nstart = 25)
+k2
+```
+
+
+```{r}
+df_all$cluster <- as.character(k2$cluster)
+df_all
+ggplot() +
+  geom_point(data = df_all, 
+             mapping = aes(x = borrows, 
+                                  y = repays, 
+                                  colour = group))
+```
+
+```{r}
+packageVersion("tidyselect")
+autoplot(k2, df_all[c(-1,-2,-3)])
+```
+
+
+
+
