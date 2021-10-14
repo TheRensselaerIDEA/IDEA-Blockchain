@@ -23,17 +23,9 @@ if (!require("RColorBrewer")) {
   install.packages("RColorBrewer")
   library(RColorBrewer)
 }
-if (!require("beeswarm")) {
-  install.packages("beeswarm")
-  library(beeswarm)
-}
 if (!require("tidyverse")) {
   install.packages("tidyverse")
   library(tidyverse)
-}
-if (!require("ggbeeswarm")) {
-  install.packages("ggbeeswarm")
-  library(ggbeeswarm)
 }
 if (!require("xts")) {
   install.packages("xts")
@@ -59,6 +51,10 @@ if (!require("survival")) {
   install.packages("survival")
   library(survival)
 }
+if (!require("zoo")) {
+  install.packages("zoo")
+  library(zoo)
+}
 ```
 
 ```{r}
@@ -68,102 +64,122 @@ raw_df <- read_rds('../Data/transactions.Rds')
 ```
 
 ```{r}
-diffs <- raw_df %>% 
-  filter(type=="borrow" | type=="deposit") %>%
-  select(timestamp,user,type,amountUSD) %>%
-  arrange(user,timestamp)
-m <- max(diffs$timestamp)
+borrows <- raw_df %>%
+  filter(type=="borrow")
 
-final <- data.frame(user=numeric(0),timediff=numeric(0),status=numeric(0))
+deposits <- raw_df %>%
+  filter(type=="deposit")
 
-for (u in unique(diffs$user)) {
- x <- diffs[diffs$user==u,]
- minBorrow <- m
- minDeposit <- m
- for (row in 1:nrow(x)) {
-   if (minBorrow > x[row,"timestamp"] & x[row,"type"] == "borrow") {
-     minBorrow <- x[row,"timestamp"]
-   }
-   if (minDeposit > x[row,"timestamp"] & x[row,"type"] == "deposit") {
-     minDeposit <- x[row,"timestamp"]
-   }
- }
- if (minBorrow-minDeposit == 0) {
-   final[nrow(final)+1,] <- c(u,(minBorrow-minDeposit)/86400,0)
- } else{
-   final[nrow(final)+1,] <- c(u,(minBorrow-minDeposit)/86400,1)
- }
-}
-head(final,20)
+depositBorrow <- left_join(deposits,borrows,by="onBehalfOf") %>%
+  dplyr::rename(depositTime=timestamp.x) %>%
+  dplyr::rename(borrowTime=timestamp.y) %>%
+  group_by(onBehalfOf) %>%
+  dplyr::summarise(timeDiff=case_when(min(borrowTime)-min(depositTime)>0 ~ (min(borrowTime)-min(depositTime))/86400, TRUE ~ as.double(max(borrows$timestamp)/86400))) %>%
+  mutate(status=case_when(timeDiff==max(borrows$timestamp)/86400 ~ 0, timeDiff>0 ~ 1, TRUE ~ 0)) %>%
+  select(onBehalfOf,timeDiff,status)
+
+depositBorrow
+unique(depositBorrow$status)
 ```
 
 ```{r}
-ggplot(final, aes(x=timediff)) + geom_histogram()
-```
-
-```{r}
-km <- with(final, Surv(timediff, status))
+km <- with(depositBorrow, Surv(timeDiff, status))
 head(km,80)
 ```
 
 ```{r}
-final <- final %>%
-  filter(timediff > 0)
-km_fit <- survfit(Surv(timediff, status) ~ 1, data=final)
+km_fit <- survfit(Surv(timeDiff, status) ~ 1, data=depositBorrow)
 summary(km_fit, times = c(1,30,60,90*(1:10)))
 autoplot(km_fit,xlab="time (days)",ylab="Survival Rate",title="Survival Rate of Deposit before the first Borrow")
 ```
 
 ```{r}
-diffs <- raw_df %>% 
-  filter(type=="liquidation" | type=="borrow") %>%
-  select(timestamp,user,type) %>%
-  arrange(user,timestamp)
-m <- max(diffs$timestamp)
-final <- data.frame(user=numeric(0),timediff=numeric(0),status=numeric(0))
+usdc_borrows <- borrows %>%
+  filter(reserve=="USDC") %>%
+  select(onBehalfOf,timestamp) %>%
+  dplyr::rename(user=onBehalfOf)
 
-for (u in unique(diffs$user)) {
-  x <- diffs[diffs$user==u,]
-  minBorrow <- m
-  minLiquidation <- m
-  for (row in 1:nrow(x)) {
-    if (minBorrow > x[row,"timestamp"] & x[row,"type"] == "borrow") {
-      minBorrow <- x[row,"timestamp"]
-    }
-    if (minLiquidation > x[row,"timestamp"] & x[row,"type"] == "liquidation") {
-      minLiquidation <- x[row,"timestamp"]
-    }
-  }
-  if (minBorrow-minLiquidation == 0) {
-   final[nrow(final)+1,] <- c(u,(minLiquidation-minBorrow)/86400,0)
- } else{
-   final[nrow(final)+1,] <- c(u,(minLiquidation-minBorrow)/86400,1)
- }
-}
-head(final,20)
+usdc_liquidations <- raw_df %>%
+  filter(type=="liquidation" & principalReserve=="USDC") %>%
+  select(user,timestamp)
+
+usdc_borrowLiquid <- left_join(usdc_borrows,usdc_liquidations,by="user") %>%
+  dplyr::rename(borrowTime=timestamp.x) %>%
+  dplyr::rename(liquidTime=timestamp.y) %>%
+  group_by(user) %>%
+  dplyr::summarise(timeDiff=case_when(min(borrowTime)-min(liquidTime)>0 ~ min(borrowTime)-min(liquidTime), TRUE ~ as.integer(max(usdc_borrows$timestamp)))) %>%
+  mutate(status=case_when(timeDiff>0 ~ 1, TRUE ~ 0)) %>%
+  select(user,timeDiff,status)
+
+usdc_borrowLiquid
+unique(usdc_borrowLiquid$status)
 ```
 
 ```{r}
-ggplot(final, aes(x=timediff)) + geom_histogram()
+liquidations <- raw_df %>%
+  filter(type=="liquidation")
+```
+
+
+```{r}
+borrows2 <- raw_df %>%
+  filter(type=="borrow") %>%
+  select(onBehalfOf,borrowRateMode,borrowRate,reserve,amountUSD,timestamp) %>%
+  dplyr::rename(user=onBehalfOf)
+
+liquids <- raw_df %>%
+  filter(type=="liquidation") %>%
+  select(user)
+
+liquidModes <- left_join(borrows2,liquids,by="user")
+
+ggplot(liquidModes,aes(x=borrowRateMode)) + geom_bar()
 ```
 
 ```{r}
-km <- with(final, Surv(timediff, status))
-head(km,80)
+liquidStable <- liquidModes %>%
+  filter(borrowRateMode=="Stable" & amountUSD <= 5000000 & borrowRate <= 20) %>%
+  select(borrowRate,reserve,amountUSD,timestamp)
+
+liquidVariable <- liquidModes %>%
+  filter(borrowRateMode=="Variable" & amountUSD <= 25000000 & borrowRate <= 5) %>%
+  select(borrowRate,reserve,amountUSD,timestamp)
+
+ggplot(liquidStable,aes(x=reserve,y=borrowRate)) + geom_boxplot(outlier.shape=NA) + ggtitle("Borrow Rate for Every Stable Borrow that Liquidated by Reserve")
+ggplot(liquidVariable,aes(x=reserve,y=borrowRate)) + geom_boxplot(outlier.shape=NA) + ggtitle("Borrow Rate for Every Variable Borrow that Liquidated by Reserve")
+
+ggplot(liquidStable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Amount USD vs Borrow Rate for every Stable Borrow that Liquidated")
+ggplot(liquidVariable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Amount USD vs Borrow Rate for every Variable Borrow that Liquidated")
 ```
 
 ```{r}
-final <- final %>%
-  filter(timediff > 0)
-km_fit <- survfit(Surv(timediff, status) ~ 1, data=final)
-summary(km_fit, times = c(1,30,60,90*(1:10)))
-autoplot(km_fit,xlab="time (days)",ylab="Survival Rate",title="Survival Rate of Borrow before the first Liquidation")
+big_liquidVariable <- liquidVariable %>%
+  filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI")
+
+big_liquidStable <- liquidStable %>%
+  filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI")
+
+ggplot(big_liquidVariable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Amount USD vs Borrow Rate for every Variable Borrow that Liquidated (Big 3)")
+ggplot(big_liquidStable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Amount USD vs Borrow Rate for every Stable Borrow that Liquidated (Big 3)")
+```
+
+```{r}
+# calculate and graph a moving average of borrow rates that led to liquidation for both stable and variable borrows
+roll_big_liquidStable <- big_liquidStable %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg=zoo::rollmean(borrowRate,k=1,fill=NA)) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA)) %>%
+  dplyr::mutate(rollingAvg90=zoo::rollmean(borrowRate,k=90,fill=NA))
+
+ggplot(roll_big_liquidStable, aes(x=as_datetime(timestamp),y=rollingAvg90)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("90-Day Rolling Average for Stable Borrow Rates that Liquidated over Time")
+
+roll_big_liquidVariable <- big_liquidVariable %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg=zoo::rollmean(borrowRate,k=1,fill=NA)) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA)) %>%
+  dplyr::mutate(rollingAvg90=zoo::rollmean(borrowRate,k=90,fill=NA))
+
+ggplot(roll_big_liquidVariable, aes(x=as_datetime(timestamp),y=rollingAvg90)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("90-Day Rolling Average for Variable Borrow Rates that Liquidated over Time")
 ```
 
 
-Time from deposit until first borrow - x
-Survival of Borrows to Liquidations - x
-How many transactions/time it takes to empty deposit fully
-Net amount transacted each day
-Predict Liquidations based on survival rates, time to liquidate
-Users who liquidated vs had not
