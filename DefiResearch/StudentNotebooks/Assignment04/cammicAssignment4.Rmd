@@ -1,0 +1,53 @@
+---
+title: "BlockchainL Project Status Notebook Template"
+author: "Chris Cammilleri"
+date: "14 October 2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "Decentralized Finance"
+---
+
+## Weekly Work Summary	
+
+* RCS ID: cammic
+* Project Name: Blockchain
+
+* Network analysis on User and OnBehalfOf columns
+* Network analysis of Liquidations
+* Analysis of distinguishing factors between users who have liquidated and those who have not
+
+## Personal Contribution	
+
+All contributions were completed by me. 
+
+## Discussion of Primary Findings
+
+The first thing I did was do create a graph showing the connections between the User and OnBehalf of column in the dataset. From this graph, we can see that some users do large amounts of transactions on behalf of others (over 10,000 for some). These are likely smart contract addresses. The smart contracts from the Aave protocol have been filtered out in the graph, but user created smart contracts still remain in the data. In addition, we can see how most users do not interact with others on the platform, as there are many standalone nodes. The link to this graph is: https://hub.graphistry.com/graph/graph.html?dataset=6cad1f6ad2fe40f3a2f9e892a4c0f95e&type=arrow&viztoken=1578140c-e1bf-4381-8d6f-5552820fa790&usertag=d405080c-pygraphistry-0.20.1&splashAfter=false&info=true&play=5000&session=c2f3382535e0454c81e35026904568e7. The notebook for this is titled Network Analysis.ipynb, and is in the Assignment 4 folder for my branch. In the future, I hope to do further network analysis for the graph. I plan on summarizing different communities, and cluster the different communities based on those attributes. 
+
+![](Capture.PNG)
+
+The next thing I did was make another graph, but this time showing the connection between liquidators, and users who have been liquidated. We can observe that some of the liquidators are responsible for a large proportion of the liquidations. We can also observe how some liquidators repeatadly target the same account, while some accounts are the targets of multiple liquidators. The link to this graph is:
+https://hub.graphistry.com/graph/graph.html?dataset=0854380085c44179badfb23ee0fd111f&type=arrow&viztoken=5fb62403-b927-43f0-9817-42dc4f2a8039&usertag=d405080c-pygraphistry-0.20.1&splashAfter=false&info=true&play=5000&session=6c7a6fa036cb4c8e901c6b2e4dedf23e. The notebook for this is titled Liquidations.ipynb, and is in the Assignment 4 folder for my branch.
+
+![](Capture2.PNG)
+
+Finally, I analyzed the distinguishing factors between users who have liquidated and those who have not liquidated. First, we look at the proportions of transaction types. We observe who liquidators tend to borrow more, and deposit less.
+
+![](proportions.PNG)
+
+Next, we look at the days active. Clearly, liquidators have been around for longer. 
+
+![](times.PNG)
+
+Now, we look at the average number of transactions of each type per user. Liquidators seem to make many more transactions than non-liquidators.
+
+![](numbers.PNG)
+
+Finally, we look at the amounts used in the different transaction types. The medians are about the same between both types of users.
+
+![](amounts.PNG)
+
+My plan for the future is to cluster on the features that distinguish these two types of users. The goal is for the clustering to identify patterns of behavior that is common for users who are about to liquidate. Ultimately, my goal will be to build a machine learning model to predict if a account will liquidate in a certain period of time. With this model, I can build a smart contract that can efficiently liquidate accounts, and hopefully make a profit. 
