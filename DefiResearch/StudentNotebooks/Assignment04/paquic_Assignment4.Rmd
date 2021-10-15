@@ -1,0 +1,264 @@
+---
+title: "DAR F21 Project Status Notebook"
+author: "Cole Paquin"
+date: "10/14/2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DeFi Assignment 4"
+---
+
+
+## Weekly Work Summary	
+
+* RCS ID: paquic
+* Project Name: DeFi
+* New this week: Visualization of cluster transactions over time and regression models.
+
+## Discussion of Primary Findings 	
+
+* Discuss primary findings: 
+
+    * What did you want to know? 
+    
+    Among the clusters that I used, I wanted to be able to better visualize their activity over time. Also, I wanted to look into seeing if we could use regression models to predict how many liquidations a user would have.
+    
+    * How did you go about finding it? 
+    
+    I used ggplot and facet_grid to be able to show how the users behavied. These charts allow us to see differences between clusters other than just looking at the cluster centers. For the regression, I used a ridge regression model on different features to try to predict how many liquidations a user has already had.
+    
+    * What did you find?
+
+# Building Dataframe - SKIP
+```{r}
+#import libraries
+
+library(ggplot2)
+library(ggbiplot)
+library(gplots)
+library(RColorBrewer)
+library(beeswarm)
+library(tidyverse)
+library(ggbeeswarm)
+library(foreach)
+library(doParallel)
+library(Rtsne)
+library(anytime)
+library(caret)
+
+```
+We begin by loading the csv file in to a dataframe.
+```{r}
+#load in csv file to data frame
+df<-readRDS("~/transactions.Rds")
+```
+We reformat the dataframe so that each row represents a user, and the columns represent a summarization of the user's transaction history. 
+```{r}
+#group by user and get time of user's first and last transaction, as well as number of transactions
+df.users<- df%>%group_by(user)%>%
+  summarise(timefirst=min(timestamp), timelast=max(timestamp), N=n())
+#get the time the user has been active
+df.users$timeactive<-df.users$timelast-df.users$timefirst
+#get amounts for columns
+df$logUSD<-log10(df$amountUSD)
+df$logCollateralUSD<-log10(df$amountUSDCollateral)
+#get user's transaction information
+for(Type in unique(df$type)){
+  #filter for only transactions of certain type
+  df.type <-filter(df%>%group_by(user)%>%
+                     count(type),type==Type)
+  
+  #add means of each transaction type
+  if(Type!="liquidation" || Type!="swap"){
+    df.sum<-filter(df,type==Type)%>%
+      group_by(user)%>%
+      summarise(Sum=sum(logUSD))
+    colnames(df.sum)[2]<-paste('total_',Type,sep='')
+    df.users<-merge(x=df.users,y=df.sum,by="user",all.x=TRUE)
+  } 
+  
+  #add counts of transaction types to df
+  ntypes<-paste("n",Type,sep='')
+  colnames(df.type)[3]<-ntypes
+  df.users<-merge(x=df.users,y=select(df.type,user,ntypes),by="user",all.x=TRUE)
+  
+  #get proportion of transaction types and weekly number of transaction type
+  df.users[paste("prop_",Type,sep='')]<-(df.users[ntypes]+.05)/((df.users$N)+.3)
+  #df.users[paste("weekly_",Type,sep='')]<-df.users[ntypes]/(((df.users$timeactive)+1)/(3600*24*7))
+}
+```
+
+```{r}
+#subset only columns we wish to scale by removing columns that we will not cluster on
+df.sub<-select(df.users,-c(user,timefirst,timelast,nborrow,nrepay,nswap,nliquidation,nredeem,ndeposit, total_swap, total_liquidation))
+#repalce missing values as 0's
+df.sub<-df.sub%>%replace(is.na(.),0)
+```
+We scale the data to prepare for PCA.
+```{r}
+#scale data
+df.scaled<-df.sub%>%mutate_all(scale)
+
+head(df.scaled)
+```
+
+# Creating Clusters
+  
+```{r}
+#Get rid of outliers
+df.scaled <- df.scaled[-c(35019, 32511, 5258),]
+df.users <- df.users[-c(35019, 32511, 5258),]
+
+#perform pca on data
+my.pca<-prcomp(df.scaled,retx=TRUE,center=FALSE,scale=FALSE) # Run PCA and save to my.pca
+#summary of pca
+summary(my.pca)
+#make scree plot
+plot(my.pca, type="line")
+
+ncomps=5
+```
+  Although we could pick several different numbers of clusters, I chose 7 because it gives us a good amount of distinction between them.
+  
+Finally, we run the kmeans clustering algorithm on the data. We select the number of clusters equal to the number of selected components. 
+```{r}
+#run kmeans algorithm
+set.seed(1)
+km <-kmeans(df.scaled,7)
+#plot frequencies of each cluster
+barplot(table(km$cluster),main="Kmeans Cluster Size")
+km$size
+```
+
+This is interesting. We can see that cluster 2 only contains three users, and 6 has 88. Thus, we want to look at why they are distinctive, but also be sure to not overanalyze their charts since it is a small sample size. Finally, we view the centers of the kmeans clusters.
+
+```{r}
+#make heatmap of cluster centers
+heatmap.2(km$centers,
+scale = "col",
+dendrogram = "row",
+Colv=FALSE,
+cexCol=1.0,
+main = "Kmeans Cluster Centers",
+trace ="none")
+```
+
+We see that our tiny cluster, 2, has users that have been active for a long time. Not only that, but they have the most total transactions and have significantly deposited a lot of money. Cluster 6 (the other small one) has users that have borrowed and repayed large amounts of money. Cluster 7, which is our largest cluster, seems to represent a very average user. It should be noted that cluster 3 us made up of the users who were liquidated.
+
+* Exploring the Influential Factors with a Biplot 
+```{r}
+plot1<-ggbiplot(my.pca,choices=c(1,2),
+  #labels=rownames(df.scaled), #show point labels
+  var.axes=TRUE, # Display axes
+  ellipse = FALSE, # Don't display ellipse
+  obs.scale=1,
+  groups=as.factor(km$cluster)) +
+  ggtitle("User Data Projected on PC1 and PC2 ")
+plot1
+```
+
+This biplot gives us a good visualization of the clusters, and we can see that our smaller clusters are seen as outliers in this plot.
+
+# Graphing Transactions over Time
+
+Now, I started to visualize how these people acted over time. First, I wanted to check on the date range we were looking at.
+```{r}
+df["date"] = anydate(df$timestamp)
+min(df$date)
+max(df$date)
+```
+
+Knowing this, I could graph the densities of all transactions over time. It should be noted that the dotted vertical line represents the day which China announced their crackdown on cryptocurrencies, which we hypothesize could affect our behavior.
+```{r}
+ggplot(data = df, aes(x = date,  group = type, color = type)) + 
+  geom_density()+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.5)+
+  ggtitle("Transaction Types Density Plot")
+```
+
+We can see how liquidations and swaps tend to have peaks at certain times, and there was a large jump in liquidations immediately after China announced. I believe this is correlated with the drop in price of the crypto market. From this, we can start to look at the actions of individual clusters. I will show cluster 7 since it is our largest cluster.
+
+```{r}
+user_ids <- filter(df.users, km$cluster == 7)
+ggplot(data = filter(df, df$user %in% user_ids$user), aes(x = date,  group = type, color = type)) + 
+  geom_density()+
+  ggtitle("User Cluster Density Plot- 7")+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.5)
+
+```
+
+Now, I will get a bit fancier and use facet_grid to show all of these clusters at the same time. This allows us to make better comparisons.
+
+```{r}
+df.clusters <- data.frame(user = df.users$user, cluster = km$cluster)
+df <- left_join(df, df.clusters, by = "user")
+```
+
+```{r}
+ggplot(data = df[!(is.na(df$cluster)), ], aes(x = date,  group = type, color = type)) + 
+  geom_density()+
+  ggtitle("Density Plots of Transaction Types by User Cluster")+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.5)+
+  facet_wrap(~ cluster)
+```
+
+This gives us a much better comparison, at the cost of the detail for each individual graph. That is why it is still helpful to have the individual charts. This does show however, how groups 1, 3, 4, and 6 were the ones who saw the greatest spikes in liquidations in early May.
+
+# Predicting Liquidators
+
+A natural question to ask is how well we can predict how many times a user will be liquidated based off of their previous history. I briefly ran a regression model to see how this could work.
+
+Next, we select only the columns we care about.
+```{r}
+#subset only columns we wish to scale by removing columns that we will not cluster on
+df.users$num_liquidations = round(df.users$N * df.users$prop_liquidation)
+df.final<-select(df.users,-c(user,timefirst,timelast,nborrow,nrepay,nswap,nliquidation,nredeem,ndeposit, total_swap, total_liquidation, prop_liquidation))
+#repalce missing values as 0's
+df.final<-df.final%>%replace(is.na(.),0)
+```
+
+```{r}
+summary(df.final)
+```
+
+Now, we have the features that we will run regression on, as well as what we are trying to predict (num_liquidations). Now we need to split our data into a training and testing set.
+  
+```{r}
+# Split into training and testing data
+set.seed(1)
+training.samples <- df.final$num_liquidations %>%
+  createDataPartition(p = 0.8, list = FALSE)
+train.df <- df.final[training.samples, ]
+test.df <- df.final[-training.samples, ]
+```
+
+Now that we have separated our data, we are able to build the model.
+
+```{r}
+#Build model and get predicted values
+ridge_model <- train(num_liquidations ~., data = df.final, method = "ridge")
+test_predict <- predict(ridge_model, test.df)
+```
+
+This chart shows us the relative importance of the different variables in our dataset.
+
+```{r}
+ggplot(varImp(ridge_model))
+```
+
+This chart seems to make sense. Users that borrow a lot of money and have been active for a while will be more likely. Also, it is a bit interesting to me to see how the proportion of deposits is so high, I'm guessing they have an inverse relationship. However, since we have our model, we can now look at its results.
+
+```{r}
+ridge_mse <- data.frame(pred = test_predict, actual = test.df$num_liquidations)
+cat("Ridge Regression Model MSE: ", mean((ridge_mse$actual - ridge_mse$pred)^2))
+
+true <- filter(ridge_mse, ridge_mse$actual > 0)
+false <- filter(ridge_mse, ridge_mse$actual == 0)
+
+cat("\nMSE where Users Actually Liquidated: ", mean((true$actual - true$pred)^2))
+cat("\nMSE of Users with 0 Liquidations: ", mean((false$actual - false$pred)^2))
+```
+
+Overall, this fairly simply model does a good job in predicting liquidations. One issue I think we may run into in more advanced models is avoiding models that predict low numbers for every user since most users do not get liquidated. We can see in this model, the MSE is significantly higher for users who had been liquidated. This is to be expected. The goal of future models will be to lower the error for liquidated users. Also, user a binary (or -1 and 1) classification model may help, but also will fail to distinguish between different amounts of liquidation.
