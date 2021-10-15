@@ -1,0 +1,191 @@
+---
+title: "Survival Analysis of Loans in AAVE"
+subtitle: "DeFi Assignment 3"
+author: "Aaron Micah Green"
+date: "09/29/2021"
+output:
+  html_document:
+    toc: true
+    number_sections: true
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+# CAUTION: DO NOT interrupt R as it installs packages!!
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dp)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+if (!require("plotly")) {
+  install.packages("plotly")
+  library(plotly)
+}
+if(!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+if(!require("survival")) {
+  install.packages("survival")
+  library(survival)
+}
+if(!require("survminer")) {
+  install.packages('survminer')
+  library(survminer)
+}
+if(!require("ranger")){
+  install.packages("ranger")
+  library(ranger)
+}
+if(!require("ggfortify")){
+  install.packages("ggfortify")
+  library(ggfortify)
+}
+```
+
+# Prepare Transaction Data
+
+We begin by loading our prepared AAVE transaction data into a dataframe. The dataset has over 400,000 rows, and 27 columns. 
+
+We are directly loading the dataframe from an Rds archive instead of a CSV file to conserve space. 
+
+```{r}
+#load Rds (binary version of csv file) into dataframe
+df<-read_rds('../../Data/transactions.Rds')
+```
+
+# Convert Data to Appropriate Format for Survival Analysis
+  For tracking loans we can filter out all but a few features of the data:
+  
+```{r}
+loanData <- df %>%
+  filter(type == 'borrow' | type == 'repay') %>%
+  select(user, type, reserve, timestamp) %>%
+  arrange(timestamp)
+```
+
+```{r}
+loanDataKM <- data.frame(time=numeric(0), eventType = numeric(0), reserve = factor(levels = unique(df$reserve)))
+
+usersChecked <- 0
+timeFinal <- loanData[nrow(loanData), "timestamp"]
+loanDataTemp <- c()
+
+for(oneUser in loanData$user){
+  userData <- filter(loanData, user==oneUser)
+  
+  if(nrow(userData) >= 1000) next
+  
+  for(oneReserve in userData$reserve){
+    
+    if(is.na(oneReserve)) next
+    
+    userReserveData <- filter(userData, reserve==oneReserve)
+    userBorrows <- filter(userReserveData, type=="borrow")
+    userNonBorrows <- filter(userReserveData, type != "borrow")
+    
+    for(borrow in 1:nrow(userBorrows)){
+
+      timeOfBorrow <- userBorrows[borrow, "timestamp"]
+      
+      if(is.na(timeOfBorrow)) break
+      
+      timeOfNextAction <- 0
+      nextActionType <- 0
+
+      for(nextAction in 1:nrow(userNonBorrows)){
+        if(is.na(userNonBorrows[nextAction, "timestamp"])) break
+
+        if(userNonBorrows[nextAction, "timestamp"] >= timeOfBorrow){
+          timeOfNextAction <- userNonBorrows[nextAction, "timestamp"]
+          nextActionType <- 1
+          break;
+        }
+      }
+
+      timeForEvent <- timeOfNextAction - timeOfBorrow
+      if(timeForEvent < 0) timeForEvent <- timeFinal - timeOfBorrow;
+      loanDataKM[nrow(loanDataKM) + 1,] <- c(as.numeric(timeForEvent/86400), as.numeric(nextActionType), oneReserve)
+      
+    }
+  }
+  usersChecked <- usersChecked + 1
+}
+
+```
+# Perform the Survival Analysis
+  This code is based on the brief YouTube tutorial found here: https://youtu.be/w9h3CCHz_-g
+  
+```{r}
+loanCountReserve <- loanDataKM %>%
+  count(reserve) %>%
+  arrange(-n)
+
+df <- df %>%
+  mutate(reserveType = if_else(reserve %in% stableCoins$reserve, "Stable", if_else(reserve %in% ammCoins$reserve, "AMM", "Non-Stable")))
+
+reserveTypes <- df %>%
+  select(reserve, reserveType) %>%
+  distinct()
+
+loanDataKMStable <- loanDataKM %>%
+  left_join(reserveTypes) %>%
+  filter(reserve %in% head(loanCountReserve, 10)$reserve, reserveType=="Stable")
+
+km_fitStable <- survfit(Surv(as.numeric(time), as.numeric(eventType)) ~ reserve, data=loanDataKMStable)
+
+kmPlotStable <- ggsurvplot(km_fitStable, xlab="Time (days)", ylab="Probability of Being Repayed", title="How Long Do Users Wait to Repay Loans (Stable Coins)?", legend.title="")
+
+kmPlotStable
+```
+```{r}
+loanDataKMNonStable <- loanDataKM %>%
+  left_join(reserveTypes)
+
+km_fitNonStable <- survfit(Surv(as.numeric(time), as.numeric(eventType))~reserveType, data=loanDataKMNonStable)
+
+km_fitNonStable <- ggsurvplot(km_fitNonStable, xlab="Time (days)", ylab="Probability of Repayment", title="How Long Do Users Wait to Repay Loans?", legend.title="")
+
+km_fitNonStable
+```
