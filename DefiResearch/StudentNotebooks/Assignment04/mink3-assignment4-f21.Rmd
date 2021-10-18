@@ -1,0 +1,398 @@
+---
+title: "DAR Defi Team Assignment 4 (Fall 2021)"
+subtitle: "DeFi Reserve Coins"
+author: "Kaiwen Min"
+date: "10/13/2021"
+output:
+  pdf_document: default
+  html_document:
+    toc: true
+    number_sections: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+# CAUTION: DO NOT interrupt R as it installs packages!!
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dp)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+
+```
+
+
+# GITHUB UPDATE & SUBMISSION INSTRUCTIONS (Delete before submission!)
+
+For this and subsequent assignments you'll follow the same basic github steps you used for Assignment 1, ie:
+
+* **Option 1:** Update the copy of your team's repository currently in your home directory:
+    * _This is the preferred option **if** you have already cloned the repository_
+    * In the Linux terminal: `git pull origin master`
+    * If there are errors, it's simplest to proceed to "Option 2"
+    * If no errors, check your branch: `git branch` (should be something like `dar-rcsid`)
+* **Option 2:** Get a fresh copy of your team's repository:
+    * _Do this only if Option 1 fails!_
+    * In Linux: `cd ~` to get to your login directory
+    * In Linux: `rm -Rf IDEA-Blockchain` (deletes all your previous, uncommited work)
+    * In Linux: `git clone https://github.rpi.edu/DataINCITE/IDEA-Blockchain.git`
+    * In Linux: `cd IDEA-Blockchain` 
+    * In Linux: Recreate a personal branch to save your changes to: `git checkout -b dar-rcsid` (replace "rcsid" with your rcsid!)
+* Locate and save a personal copy of the assignment notebook:
+    * In RStudio "Files" tab, navigate to: `Home > IDEA-Blockchain > DefiResearch > StudentNotebooks > Assignment02`
+    * Double-click on `blockchain-assignment2-f21.Rmd` to open
+    * Under the "File" menu, "Save as" something like `rcsid-assignment2-f21.Rmd` (replace "rcsid" with your rcsid!)
+    * You should see your file appear in the "Files" tab, usually at the bottom
+    * Under "More" in the "Files" tab, select "Set as working directory"
+* Edit your notebook, saving as you make changes.
+    * `cntl-S` works!
+* "Knit" your notebook, generating a PDF file:
+    * You should see your new PDF appear in the "Files" tab, usually at the bottom
+    * "Export" your file (under the "More" menu in the "Files" tab) and save to your local file system
+* Add your changed file(s) to your personal branch, and commit:
+    * In Linux: `cd ~/IDEA-Blockchain/DefiResearch/StudentNotebooks/Assignment02`
+    * In Linux: `git add rcsid-assignment2.*` (replace "rcsid" with your rcsid!)
+    * In Linux: `git commit -m "rcsid assignment 2"`
+* Push your changes to the remote repository:
+    * In Linux: `git push origin dar-rcsid` (replace "rcsid" with your rcsid)
+* Issue a pull request:
+    * Navigate to https://github.rpi.edu/DataINCITE/IDEA-Blockchain in your browser
+    * It should notify you of your recent push and prompt you to make a pull request.
+    * If not, find your branch under the popup (defaults to **master**), select and click to issue a pull request
+    * One of the instructors 
+*  Upload your downloaded `rcsid-assignment2-f21.pdf` to LMS (replace "rcsid" with your rcsid)
+*  **Be prepared to share your findings in the DeFi Meeting Thursday.**
+
+
+# Prepare Transaction Data and Explore
+
+We begin by loading our prepared AAVE transaction data into a dataframe. The dataset has over 400,000 rows, and 27 columns. 
+
+We are directly loading the dataframe from an Rds archive instead of a CSV file to conserve space. 
+
+```{r}
+#load Rds (binary version of csv file) into dataframe
+# Assumes this notebook is in: ~/IDEA-Blockchain/DefiResearch/StudentNotebooks/Assignment02
+df<-read_rds('../../Data/transactions.Rds')
+
+# Let's take a quick look at the first few observation
+head(df)
+```
+
+Now look at the summaries to see the types, values, and missingness (NA's) of the data.
+
+```{r}
+
+summary(df)
+```
+
+
+First we'll do some preliminary analysis before we ask detailed questions.
+
+## Analyze Transaction Types
+
+Let's examine the different types of _transactions_ present in the data. We'll make a simple bar plot to visualize the number of each transaction types. "Deposit" is the most common type of transaction, whereas "swaps" are the most rare.
+
+```{r}
+#set color palette
+colors = brewer.pal(6,"Set2")
+
+#create barplot
+barplot(table(df$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
+```
+
+There are more "deposits" than "borrows," because users often need to overcollateralize for loans. 
+
+Now we'll examine the amount of US dollars being used in the different types of transactions. We create box plots for the four types of transactions that have the "amount" feature associated with them, and we visualize the distribution of that column for the different transactions. 
+
+We can see that most transactions are completed with very little money. 
+
+```{r}
+#create boxplot
+boxplot(amountUSD~type,data=df,outline=FALSE,col=colors,
+        main="Transaction Amounts",xlab="Type",ylab="Amount (USD)")
+
+```
+
+We do find some very large amounts, so it's helpful to look at this on a log scale.
+
+```{r}
+boxplot(log(amountUSD)~type,data=df,outline=FALSE,col=colors,
+        main="Log Transaction Amounts",xlab="Type",ylab="Log Amount (USD)")
+```
+
+Observation: _There are many borrows and repays with high transactions amounts, but deposits and redeems have much lower transactions amounts._
+
+## Examine Reserve Coins  
+
+There are 50 different "Reserve" coins used in transactions in AAVE.
+Let's create a table of those reserve coins with at least 500 transactions and rank order them by their volume. 
+
+```{r}
+# Use deplyr to drop NA reserves, add the counts and then kep only the top 20
+reservecoins <- df %>%  drop_na(reserve) %>% 
+  count(reserve) %>% 
+  arrange(-n) %>% 
+  head(30)
+
+# Add the rank to help keep track of the reserve coins
+reservecoins <- reservecoins %>% 
+  mutate(rank=1:nrow(reservecoins),.before=reserve)
+
+# List the results nicely with kable()
+kable(reservecoins)
+
+```
+
+Let's look at the number of transactions types for each currency. 
+
+```{r}
+
+TopcoinSummary <- df %>% filter(reserve %in% reservecoins$reserve) %>%
+  group_by(reserve) %>% 
+  count(type) %>% 
+  mutate(percent = n/sum(n)*100)
+
+kable(TopcoinSummary) 
+
+```
+
+
+## Look at Sample User Transaction Histories 
+
+Finally, we will examine the transaction history of different users. To do this, we will select 3 random users from the data who have completed between 100 and 300 transactions. Then, we create swarmplots displaying the different types of transactions those users made over time.
+
+```{r,fig.width=16,fig.height=8}
+#set seed
+set.seed(1)
+
+# Select three random users that have between 100 and 300 transactions
+users<-vector(length=3)
+count<-0
+while(count<=3){
+  success<-FALSE
+  while(!success){
+    #get random user
+    ruser<-sample(df$user,1)
+    
+    #check for valid number of transactions
+    length<-nrow(filter(df,user==ruser))
+    if (length>100 && length<300){
+      users[count]=ruser
+      success<-TRUE
+      count<-count+1
+    }
+  }
+}
+df.rusers<-filter(df, user %in%users)
+
+# Create a "swarmplot"
+
+ggplot(df.rusers,aes(user, timestamp,color=type)) + 
+        geom_beeswarm(cex=1)+
+        coord_flip()+
+        ggtitle("User Transaction History")
+
+```
+
+Observation: _Users have very different transactions patterns, which we will try to better understand. _
+
+
+# Activities
+##$\color{blue}{Exercise~1} (10 pts)$  
+
+1. Divide the top 20 reserve coins between your team members so each team member has the same amount of coins; feel free to add or subtract coins if necessary.
+
+2. Look up your coins on the internet to find out what they are.  ProTip: Look them up on http://defipulse.com to see their _Total Value Locked (TVL)_.
+
+3. Examine the percentage of transaction types for your coins.  Hypothesize why a given coin might have more of one type of transaction than another.
+
+4. _Prepare one slide with the findings for each of your coins._ (one slide summarizing each coin)
+
+5. Coordinate with your team, to combine each of your member's coin descriptions into a single presentation.  Please develop a common format or template for presenting your coin summaries so that the common information for a coin (e.g. TVL) is shown in the same format. (Your slide summaries should look the same!)
+
+6. Be prepared to present your team presentation to your client in class on Thursday 9/16.
+
+
+##$\color{blue}{Exercise~2} (10 pts)$ 
+
+1. Perform a "creative exploration" of some aspect of the Defi data that you find interesting.   Add your work in this notebook. _Your work should include at least one data visualization._
+
+2. Put your work in this notebook.
+
+3. Write a paragraph describing your findings in the context of DeFi. 
+
+4. Be prepared to share (2 minutes) in team meeting.
+
+5. _You'll receive extra credit for work that goes "above and beyond" this assignment! _
+
+```{r}
+#set seed
+
+
+df.borrow <- df %>% filter(!is.na(borrowRate)) %>% 
+  filter(type == "borrow") %>% 
+  filter(borrowRate <= 50) %>% 
+  filter(amountUSD <= 10000000) %>%
+  filter(1 <= amountUSD)
+
+summary(df.borrow$borrowRate)
+#df.borrow.variable <- df.borrow %>% filter(borrowRateMode == "Variable")
+#summary(df.borrow.variable$borrowRate)
+#summary(df.borrow.variable$amountUSD)
+#df.borrow.stable <- df.borrow %>% filter(borrowRateMode == "Stable")
+#summary(df.borrow.stable$borrowRate)
+#summary(df.borrow.stable$amountUSD)
+
+
+
+summary(df.borrow$amountUSD)
+```
+
+
+
+
+```{r}
+borrowRateModeSummary <- df.borrow %>% filter(reserve %in% reservecoins$reserve) %>%
+  group_by(reserve) %>%
+  count(borrowRateMode) %>%
+  mutate(percent = n/sum(n)*100)
+
+kable(borrowRateModeSummary) 
+
+userSummary <- df.borrow %>% filter(reserve %in% reservecoins$reserve) %>%
+  group_by(user)
+head(userSummary)
+```
+
+
+
+```{r}
+df.borrow.DAI <- df.borrow %>% filter(reserve == "DAI")
+#summary(df.borrow.DAI)
+ggplot(df.borrow.DAI,aes(borrowRate, color = borrowRateMode)) +
+  ggtitle("DAI borrow rate")+ 
+  geom_density()
+
+ggplot(df.borrow.DAI,aes(log10(amountUSD), color = borrowRateMode)) +
+  ggtitle("DAI log10 borrow amount in USD")+ 
+  geom_density()
+```
+
+```{r}
+df.borrow.USDT <- df.borrow %>% filter(reserve == "USDT")
+#summary(df.borrow.USDT)
+ggplot(df.borrow.USDT,aes(borrowRate, color = borrowRateMode)) +
+  ggtitle("USDT borrow rate")+ 
+  geom_density()
+
+ggplot(df.borrow.USDT,aes(log10(amountUSD), color = borrowRateMode)) +
+  ggtitle("USDT log10 borrow amount in USD")+ 
+  geom_density()
+```
+
+```{r}
+df.borrow.USDC <- df.borrow %>% filter(reserve == "USDC")
+#summary(df.borrow.USDC)
+ggplot(df.borrow.USDC,aes(borrowRate, color = borrowRateMode)) +
+  ggtitle("USDC borrow rate")+ 
+  geom_density()
+
+ggplot(df.borrow.USDC,aes(log10(amountUSD), color = borrowRateMode)) +
+  ggtitle("USDC log10 borrow amount in USD")+ 
+  geom_density()
+```
+
+```{r}
+df.borrow.WBTC <- df.borrow %>% filter(reserve == "WBTC")
+#summary(df.borrow.WBTC)
+ggplot(df.borrow.WBTC,aes(borrowRate, color = borrowRateMode)) +
+  ggtitle("WBTC borrow rate")+ 
+  geom_density()
+
+ggplot(df.borrow.WBTC,aes(log10(amountUSD), color = borrowRateMode)) +
+  ggtitle("WBTC log10 borrow amount in USD")+ 
+  geom_density()
+```
+
+```{r}
+df.borrow.TUSD <- df.borrow %>% filter(reserve == "TUSD")
+#summary(df.borrow.TUSD)
+ggplot(df.borrow.TUSD,aes(borrowRate, color = borrowRateMode)) +
+  ggtitle("TUSD borrow rate")+ 
+  geom_density()
+
+ggplot(df.borrow.TUSD,aes(log10(amountUSD), color = borrowRateMode)) +
+  ggtitle("TUSD log10 borrow amount in USD")+ 
+  geom_density()
+```
+
+```{r}
+df.borrow.LINK <- df.borrow %>% filter(reserve == "LINK")
+#summary(df.borrow.LINK)
+ggplot(df.borrow.LINK,aes(borrowRate, color = borrowRateMode)) +
+  ggtitle("LINK borrow rate")+ 
+  geom_density()
+
+ggplot(df.borrow.LINK,aes(log10(amountUSD), color = borrowRateMode)) +
+  ggtitle("LINK log10 borrow amount in USD")+ 
+  geom_density()
+```
+
+```{r}
+df.borrow.new2 <- df.borrow %>%
+  filter(reserve == "USDC" | reserve == "USDT" | reserve == "DAI" | reserve == "WBTC" | reserve == "TUSD") %>%
+  filter(borrowRate <= 20) %>%
+  rename(borrowRatePercentage = borrowRate)
+
+
+ggplot(df.borrow.new2,aes(borrowRatePercentage, color = reserve, linetype = borrowRateMode)) +
+  ggtitle("Borrow rate for top coins")+ 
+  geom_density()
+
+ggplot(df.borrow.new2,aes(log10(amountUSD), color = reserve, linetype = borrowRateMode)) +
+  ggtitle("Log10 borrow amount in USD for top coins")+ 
+  geom_density()
+
+
+```
