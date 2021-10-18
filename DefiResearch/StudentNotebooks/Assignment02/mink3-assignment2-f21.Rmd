@@ -4,11 +4,11 @@ subtitle: "DeFi Reserve Coins"
 author: "Kaiwen Min"
 date: "09/03/2021"
 output:
+  pdf_document: default
   html_document:
     toc: true
     number_sections: true
     df_print: paged
-  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -268,12 +268,109 @@ Observation: _Users have very different transactions patterns, which we will try
 
 ```{r}
 #set seed
+
+
+df.borrow <- df %>% filter(!is.na(borrowRate)) %>% 
+  filter(type == "borrow") %>% 
+  filter(borrowRate <= 50) %>% 
+  filter(amountUSD <= 10000000) %>%
+  filter(1 <= amountUSD)
+
+summary(df.borrow$borrowRate)
+df.borrow.variable <- df.borrow %>% filter(borrowRateMode == "Variable")
+summary(df.borrow.variable$borrowRate)
+summary(df.borrow.variable$amountUSD)
+df.borrow.stable <- df.borrow %>% filter(borrowRateMode == "Stable")
+summary(df.borrow.stable$borrowRate)
+summary(df.borrow.stable$amountUSD)
+
+head(df[order(df.borrow$borrowRate),], 100)
+
+summary(df.borrow$amountUSD)
+```
+
+
+```{r}
+
+df.borrow.AMPL <- df.borrow %>% filter(reserve == "AMPL")
+summary(df.borrow.AMPL)
+ggplot(df.borrow.AMPL,aes(borrowRate, color = "AMPL")) +
+  ggtitle("User Borrow History")+ 
+  geom_density()
+
+ggplot(df.borrow.AMPL,aes(log10(amountUSD), color = "AMPL")) +
+  ggtitle("User Borrow History")+ 
+  geom_density()
+
+```
+
+```{r}
+
+df.borrow.USDC <- df.borrow %>% filter(reserve == "USDC")
+summary(df.borrow.USDC)
+ggplot(df.borrow.USDC,aes(borrowRate, color = "USDC")) +
+  ggtitle("User Borrow History")+ 
+  geom_density()
+
+ggplot(df.borrow.USDC,aes(log10(amountUSD), color = "USDC")) +
+  ggtitle("User Borrow History")+ 
+  geom_density()
+
+```
+
+
+```{r}
+
+df.borrow.BUSD <- df.borrow %>% filter(reserve == "BUSD")
+summary(df.borrow.BUSD)
+ggplot(df.borrow.BUSD,aes(borrowRate, color = "BUSD")) +
+  ggtitle("User Borrow History")+ 
+  geom_density()
+
+ggplot(df.borrow.BUSD,aes(log10(amountUSD), color = "BUSD")) +
+  ggtitle("User Borrow History")+ 
+  geom_density()
+
+```
+
+```{r}
+
+df.borrow.DAI <- df.borrow %>% filter(reserve == "DAI")
+summary(df.borrow.DAI)
+ggplot(df.borrow.DAI,aes(borrowRate, color = "DAI")) +
+  ggtitle("User Borrow History")+ 
+  geom_density()
+
+ggplot(df.borrow.DAI,aes(log10(amountUSD), color = "DAI")) +
+  ggtitle("User Borrow History")+ 
+  geom_density()
+
+```
+
+```{r}
+
+df.borrow.LINK <- df.borrow %>% filter(reserve == "LINK")
+summary(df.borrow.LINK)
+ggplot(df.borrow.LINK,aes(borrowRate, color = "LINK")) +
+  ggtitle("User Borrow History")+ 
+  geom_density()
+
+ggplot(df.borrow.LINK,aes(log10(amountUSD), color = "LINK")) +
+  ggtitle("User Borrow History")+ 
+  geom_density()
+
+```
+
+
+
+
+```{r}
 set.seed(2)
 
-# Select four random users that have between 50 and 100 deposits
-nusers<-vector(length=4)
+# Select 50 random users that have between 10 and 1000 deposits
+nusers<-vector(length=50)
 count<-0
-while(count<=4){
+while(count<=50){
   success<-FALSE
   while(!success){
     #get random user
@@ -281,7 +378,7 @@ while(count<=4){
     
     #check for valid number of transactions
     length<-nrow(filter(df,user==ruser,type=="deposit"))
-    if (50<length && length<=100){
+    if (10<length && length<=1000){
       nusers[count]=ruser
       success<-TRUE
       count<-count+1
@@ -290,13 +387,120 @@ while(count<=4){
 }
 df.rusers<-filter(df, user %in%nusers)
 
-# Create a "swarmplot"
+barplot(table(df.rusers$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
 
-ggplot(df.rusers,aes(user, timestamp,color=type)) + 
-        geom_beeswarm(cex=1)+
-        coord_flip()+
-        ggtitle("User Transaction History")
 
+
+# Select 50 random users that have between 10 and 1000 borrows
+nusers<-vector(length=50)
+count<-0
+while(count<=50){
+  success<-FALSE
+  while(!success){
+    #get random user
+    ruser<-sample(df$user,1)
+    
+    #check for valid number of transactions
+    length<-nrow(filter(df,user==ruser,type=="borrow"))
+    if (10<length && length<=1000){
+      nusers[count]=ruser
+      success<-TRUE
+      count<-count+1
+    }
+  }
+}
+df.rusers<-filter(df, user %in%nusers)
+
+barplot(table(df.rusers$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
+
+# Select 50 random users that have between 10 and 1000 redeems
+nusers<-vector(length=50)
+count<-0
+while(count<=50){
+  success<-FALSE
+  while(!success){
+    #get random user
+    ruser<-sample(df$user,1)
+    
+    #check for valid number of transactions
+    length<-nrow(filter(df,user==ruser,type=="redeem"))
+    if (10<length && length<=1000){
+      nusers[count]=ruser
+      success<-TRUE
+      count<-count+1
+    }
+  }
+}
+df.rusers<-filter(df, user %in%nusers)
+
+barplot(table(df.rusers$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
+
+# Select 50 random users that have between 10 and 1000 repays
+nusers<-vector(length=50)
+count<-0
+while(count<=50){
+  success<-FALSE
+  while(!success){
+    #get random user
+    ruser<-sample(df$user,1)
+    
+    #check for valid number of transactions
+    length<-nrow(filter(df,user==ruser,type=="repay"))
+    if (10<length && length<=1000){
+      nusers[count]=ruser
+      success<-TRUE
+      count<-count+1
+    }
+  }
+}
+df.rusers<-filter(df, user %in%nusers)
+
+barplot(table(df.rusers$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
+
+
+# Select 200 random users that have between 5 and 10 deposits
+nusers<-vector(length=200)
+count<-0
+while(count<=200){
+  success<-FALSE
+  while(!success){
+    #get random user
+    ruser<-sample(df$user,1)
+    
+    #check for valid number of transactions
+    length<-nrow(filter(df,user==ruser,type=="deposit"))
+    if (5<length && length<=10){
+      nusers[count]=ruser
+      success<-TRUE
+      count<-count+1
+    }
+  }
+}
+df.rusers<-filter(df, user %in%nusers)
+
+barplot(table(df.rusers$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
+
+# Select 200 random users that have between 1 and 5 deposits
+nusers<-vector(length=200)
+count<-0
+while(count<=200){
+  success<-FALSE
+  while(!success){
+    #get random user
+    ruser<-sample(df$user,1)
+    
+    #check for valid number of transactions
+    length<-nrow(filter(df,user==ruser,type=="deposit"))
+    if (1<length && length<=5){
+      nusers[count]=ruser
+      success<-TRUE
+      count<-count+1
+    }
+  }
+}
+df.rusers<-filter(df, user %in%nusers)
+
+barplot(table(df.rusers$type), main='Transaction Type Counts', xlab='Type',ylab='Count',col=colors)
 ```
 
 I notice that the four users have different deposit habits. The user on the top redeems a lot, while others share a much lower frequency of redeeming. The top user also seldom borrows, while others borrow and repay much more. What they have in common is that they nearly never get liquidation. Perhaps since they have done so many deposit, indicating that they are able to pay back debt in time.
