@@ -40,6 +40,13 @@ if (!require("tidyr")) {
   install.packages("tidyr")
   library(tidyr)
 }
+if (!require("survminer")) {
+  install.packages("survminer")
+  library(survminer)
+}
+if (!require("plotly")) {
+  install.packages("plotly")
+  library(plotly)
 }
 ```
 
@@ -82,14 +89,18 @@ ggplot(wethPrice,aes(x=date,y=avgPrice)) + geom_line()
 liquidations <- df %>%
   dplyr::filter(type=="liquidation")
 
+unique(liquidations$onBehalfOf_alias) 
+# ??????
+
 wethLiquids <- liquidations %>%
   dplyr::filter(principalReserve=="WETH") %>%
-  dplyr::select(user,date,reservePriceUSDCollateral,timestamp,collateralReserve)
+  dplyr::select(user_alias,date,reservePriceUSDCollateral,timestamp,collateralReserve) %>%
+  dplyr::rename(user=user_alias)
 
 wethBorrows <- borrows %>% 
   dplyr::filter(reserve=="WETH") %>%
-  dplyr::select(onBehalfOf,date,reservePriceUSD,timestamp,borrowRateMode) %>%
-  dplyr::rename(user=onBehalfOf)
+  dplyr::select(onBehalfOf_alias,date,reservePriceUSD,timestamp,borrowRateMode) %>%
+  dplyr::rename(user=onBehalfOf_alias)
 ```
 
 ```{r}
@@ -107,6 +118,7 @@ wethBorrowLiquids <- left_join(wethBorrows,wethLiquids,by="user") %>%
 
 wethBorrowLiquids
 unique(wethBorrowLiquids$status)
+max(wethBorrowLiquids$timeDiff)
 ```
 
 ```{r}
@@ -116,7 +128,8 @@ km <- with(wethBorrowLiquids,Surv(timeDiff,status))
 head(km,25)
 km_fit <- survfit(Surv(timeDiff,status) ~ 1, data=wethBorrowLiquids)
 summary(km_fit, times = c(1,30,60,90*(1:10)))
-autoplot(km_fit)
+p <- autoplot(km_fit)
+ggplotly(p)
 ```
 
 ```{r}
@@ -124,14 +137,26 @@ km2 <- with(wethBorrowLiquids,Surv(timeDiff,status))
 head(km2,25)
 km_fit_brm <- survfit(Surv(timeDiff,status) ~ borrowRateMode, data=wethBorrowLiquids)
 summary(km_fit_brm, times = c(1,30,60,90*(1:10)))
-autoplot(km_fit_brm)
+p <- autoplot(km_fit_brm)
+ggplotly(p)
 ```
 
 ```{r}
-km3 <- with(wethBorrowLiquids,Surv(timeDiff,status))
+wethBorrowLiquidsLess <- wethBorrowLiquids %>%
+  dplyr::filter(!grepl("Amm",collateralReserve)) %>%
+  dplyr::filter(collateralReserve!="WETH")
+km3 <- with(wethBorrowLiquidsLess,Surv(timeDiff,status))
 head(km3,25)
-km_fit_cr <- survfit(Surv(timeDiff,status) ~ collateralReserve, data=wethBorrowLiquids)
+km_fit_cr <- survfit(Surv(timeDiff,status) ~ collateralReserve, data=wethBorrowLiquidsLess)
 summary(km_fit_cr, times = c(1,30,60,90*(1:10)))
-autoplot(km_fit_cr)
+ggsurvplot(km_fit_cr)
+```
+
+```{r}
+cox <- coxph(Surv(timeDiff,status) ~ borrowRateMode + collateralReserve, 
+             data=wethBorrowLiquidsLess)
+summary(cox)
+cox_fit <- survfit(cox)
+autoplot(cox_fit)
 ```
 
