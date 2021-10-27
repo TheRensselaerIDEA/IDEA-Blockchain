@@ -1,0 +1,162 @@
+---
+title: "Analysis v2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+if (!require(readr)) {
+  install.packages("readr")
+  library(readr)
+}
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+if (!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+if (!require("dplyr")) {
+    install.packages("dplyr")
+    library(dplyr)
+}
+if (!require("roll")) {
+  install.packages("roll")
+  library(roll)
+}
+if (!require("survival")) {
+  install.packages("survival")
+  library(survival)
+}
+if (!require("ggfortify")) {
+  install.packages("ggfortify")
+  library(ggfortify)
+}
+if (!require("tidyr")) {
+  install.packages("tidyr")
+  library(tidyr)
+}
+if (!require("survminer")) {
+  install.packages("survminer")
+  library(survminer)
+}
+if (!require("plotly")) {
+  install.packages("plotly")
+  library(plotly)
+}
+```
+
+```{r}
+df <- read_rds("../Data/transactionsv2.rds")
+head(df)
+```
+
+```{r}
+df <- df %>%
+  dplyr::mutate(date=as_datetime(timestamp)) %>%
+  dplyr::mutate(day=format(date,format="%d")) %>%
+  dplyr::mutate(month=format(date,format="%m"))
+
+head(df)
+```
+
+```{r}
+borrows <- df %>%
+  dplyr::filter(type=="borrow")
+
+reservePrices <- df %>%
+  dplyr::select(reserve,reservePriceUSD,date)
+
+head(reservePrices)
+```
+
+```{r}
+wethPrice <- reservePrices %>%
+  dplyr::filter(reserve=="WETH") %>%
+  dplyr::mutate(sdPrice=roll::roll_sd(reservePriceUSD,width=21)) %>%
+  dplyr::mutate(avgPrice=roll::roll_mean(reservePriceUSD,width=21))
+
+ggplot(wethPrice,aes(x=date,y=reservePriceUSD)) + geom_line()
+ggplot(wethPrice,aes(x=date,y=sdPrice)) + geom_line()
+ggplot(wethPrice,aes(x=date,y=avgPrice)) + geom_line()
+```
+
+```{r}
+liquidations <- df %>%
+  dplyr::filter(type=="liquidation")
+
+unique(liquidations$onBehalfOf_alias) 
+# ??????
+
+wethLiquids <- liquidations %>%
+  dplyr::filter(principalReserve=="WETH") %>%
+  dplyr::select(user_alias,date,reservePriceUSDCollateral,timestamp,collateralReserve) %>%
+  dplyr::rename(user=user_alias)
+
+wethBorrows <- borrows %>% 
+  dplyr::filter(reserve=="WETH") %>%
+  dplyr::select(onBehalfOf_alias,date,reservePriceUSD,timestamp,borrowRateMode) %>%
+  dplyr::rename(user=onBehalfOf_alias)
+```
+
+```{r}
+maxLiquidDate_weth <- max(wethLiquids$timestamp)
+
+wethBorrowLiquids <- left_join(wethBorrows,wethLiquids,by="user") %>%
+  dplyr::rename(borrowDate=date.x) %>%
+  dplyr::rename(liquidDate=date.y) %>%
+  dplyr::rename(borrowTimestamp=timestamp.x) %>%
+  dplyr::rename(liquidTimestamp=timestamp.y) %>%
+  dplyr::mutate(status=case_when(is.na(liquidDate) ~ 0, TRUE ~ 1)) %>%
+  dplyr::mutate(timeDiff=case_when(status==0 ~ maxLiquidDate_weth/86400, status==1 ~ (liquidTimestamp-borrowTimestamp)/86400)) %>%
+  dplyr::filter(timeDiff>0) %>%
+  dplyr::mutate(collateralReserve=tidyr::replace_na(collateralReserve,"WETH"))
+
+wethBorrowLiquids
+unique(wethBorrowLiquids$status)
+max(wethBorrowLiquids$timeDiff)
+```
+
+```{r}
+# Regular Survival Analysis
+
+km <- with(wethBorrowLiquids,Surv(timeDiff,status))
+head(km,25)
+km_fit <- survfit(Surv(timeDiff,status) ~ 1, data=wethBorrowLiquids)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
+p <- autoplot(km_fit)
+ggplotly(p)
+```
+
+```{r}
+km2 <- with(wethBorrowLiquids,Surv(timeDiff,status))
+head(km2,25)
+km_fit_brm <- survfit(Surv(timeDiff,status) ~ borrowRateMode, data=wethBorrowLiquids)
+summary(km_fit_brm, times = c(1,30,60,90*(1:10)))
+p <- autoplot(km_fit_brm)
+ggplotly(p)
+```
+
+```{r}
+wethBorrowLiquidsLess <- wethBorrowLiquids %>%
+  dplyr::filter(!grepl("Amm",collateralReserve)) %>%
+  dplyr::filter(collateralReserve!="WETH")
+km3 <- with(wethBorrowLiquidsLess,Surv(timeDiff,status))
+head(km3,25)
+km_fit_cr <- survfit(Surv(timeDiff,status) ~ collateralReserve, data=wethBorrowLiquidsLess)
+summary(km_fit_cr, times = c(1,30,60,90*(1:10)))
+ggsurvplot(km_fit_cr)
+```
+
+```{r}
+cox <- coxph(Surv(timeDiff,status) ~ borrowRateMode + collateralReserve, 
+             data=wethBorrowLiquidsLess)
+summary(cox)
+cox_fit <- survfit(cox)
+autoplot(cox_fit)
+```
+
