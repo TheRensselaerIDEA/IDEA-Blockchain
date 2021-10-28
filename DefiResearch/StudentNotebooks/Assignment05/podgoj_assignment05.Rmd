@@ -1,0 +1,802 @@
+---
+title: "DAR F21 Project Status Notebook Assignment 5"
+author: "Jason Podgorski (GitHub: podgoj)"
+date: "10/17/2021"
+output:
+  html_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+subtitle: "DeFi"
+---
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+       
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+if (!require("egg")) {
+  install.packages("egg")
+  library(egg)
+}
+if (!require("devtools")) {
+  install.packages("devtools")
+  library(devtools)
+}
+if (!require("zoo")) {
+  install.packages("zoo")
+  library(zoo)
+}
+if (!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+if (!require("tidyselect")) {
+  install.packages("tidyselect")
+  library(tidyselect)
+}
+if (!require("reactable")) {
+  install.packages("reactable")
+  library(reactable)
+}
+if (!require("caret")) {
+  install.packages("caret")
+  library(caret)
+}
+if (!require("randomForest")) {
+  install.packages("randomForest")
+  library(randomForest)
+}
+})
+```
+
+# Summary of Work 
+
+For notebook 5, I wanted to focus on two areas. First, I wanted to continue my investigation of predicting if users will liquidate. I wanted to expand the data sample to more users and try additional features such as the number of deposits, redeems, and swaps the user has. Next, I wanted to quantify good vs. bad borrows in AAVE. I examined three stable coins: USDC, USDT and DAI. My goal was to see which users borrowed when interest rates were at their highest and see if those users were forced to liquidate shortly after. 
+
+# GitHub Commits
+
+Branch Name: dar-podgoj
+
+Files on GitHub:
+
+[podgoj_assignment05.Rmd](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/DefiResearch/StudentNotebooks/Assignment05/podgoj_assignment05.Rmd)
+
+[podgoj_assignment05.pdf](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/DefiResearch/StudentNotebooks/Assignment05/podgoj_assignment05.pdf)
+
+[podgoj_assignment05.html](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/DefiResearch/StudentNotebooks/Assignment05/podgoj_assignment05.html)
+
+# Personal Contribution
+
+All of the work in this notebook is my own.
+
+# Primary Findings
+
+For predicting who will be liquidated in the future, my model needs a feature overhaul. User health factor should be the primary way of deciding if a user will be liquidated in the near future. I also believe I need to balance the number of users who have/haven't been liquidated in my sample. Decision variables with an extremely unbalanced ratio can lead to an overfit model.
+
+By looking at bad borrowers and days with high interest rates, I was happy with my analysis of users that consistently made bad borrows. By focusing on a small population of users, I was able to compare transaction histories, borrowing habits, borrowing amounts, and liquidations. I was able to find superusers that borrowed a lot and repayed little. I also learned many of these borrowers have borrowed 10+ million USD. Since many of my teammates were looking into clustering, I thought my "manually clustering" was an interesting way to compare users with similar patterns and defined constraints.
+
+# The Code
+
+```{r}
+# load Rds (binary version of csv file) into dataframe
+df <- read_rds('../../Data/transactionsv2.rds')
+tail(df, 2)
+```
+
+```{r}
+# create a new column in date format using timestamp variable
+df <- df[order(df$timestamp),]
+posixt <- as.POSIXct(df$timestamp, origin = "1970-01-01")
+df$date <- as.Date(posixt)
+```
+
+## Predicting if a User Will Liquidate
+
+In my last notebook, I attempted to predict if a user has liquidated in their past. I used logistic regression and random forest models with the number of repays and borrows per user, as well as the interest rates they typically borrow at. The interest rates surprisingly had little significance compared to the borrow and repay features. With a smaller sample, the model showed promise. I am going to try to replicate the same models with a larger population of users and see if the results were as strong as previously.
+
+[Notebook 4: podgoj_assignment04.pdf](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/DefiResearch/StudentNotebooks/Assignment04/podgoj_assignment04.pdf)
+
+```{r}
+# get pool of unique users who have liquidated in their history
+liquidators <- df[df$type == "liquidation",]
+liquidators <- unique(liquidators$user)
+liquidators_df <- df[df$user %in% liquidators,]
+```
+
+```{r}
+# get pool of unique users who have not liquidated in their history
+nonliquidators_df <- df[!(df$user %in% liquidators),]
+nonliquidators <- unique(nonliquidators_df$user)
+```
+
+```{r}
+# Create dataframe to be used in machine learning models
+
+# Add column for unqiue users in liquidator and nonliquidator groups
+df_all <- data.frame(
+  user = c(liquidators, nonliquidators)
+)
+# Create column labeling the group the user is associated with (string and binary)
+df_all$value <- ifelse(df_all$user %in% liquidators, 1, 0)
+df_all$group <- ifelse(df_all$user %in% liquidators, "Liquidator", "Nonliquidator")
+head(df_all, 2)
+```
+
+```{r}
+# create borrow, deposit, redeem, repay, and swap data frames by user for df_all
+liquid_borrows <- liquidators_df %>%
+  group_by(user) %>%
+  filter(type == "borrow") %>%
+  summarise(borrows = n())
+liquid_deposits <- liquidators_df %>%
+  group_by(user) %>%
+  filter(type == "deposit") %>%
+  summarise(deposits = n())
+liquid_redeems <- liquidators_df %>%
+  group_by(user) %>%
+  filter(type == "redeem") %>%
+  summarise(redeems = n())
+liquid_repays <- liquidators_df %>%
+  group_by(user) %>%
+  filter(type == "repay") %>%
+  summarise(repays = n())
+liquid_swaps <- liquidators_df %>%
+  group_by(user) %>%
+  filter(type == "swap") %>%
+  summarise(swaps = n())
+nonliquid_borrows <- nonliquidators_df %>%
+  group_by(user) %>%
+  filter(type == "borrow") %>%
+  summarise(borrows = n())
+nonliquid_deposits <- nonliquidators_df %>%
+  group_by(user) %>%
+  filter(type == "deposit") %>%
+  summarise(deposits = n())
+nonliquid_redeems <- nonliquidators_df %>%
+  group_by(user) %>%
+  filter(type == "redeem") %>%
+  summarise(redeems = n())
+nonliquid_repays <- nonliquidators_df %>%
+  group_by(user) %>%
+  filter(type == "repay") %>%
+  summarise(repays = n())
+nonliquid_swaps <- nonliquidators_df %>%
+  group_by(user) %>%
+  filter(type == "swaps") %>%
+  summarise(swaps = n())
+# merge liquid and nonliquid transactions
+user_borrows <- rbind(liquid_borrows, nonliquid_borrows)
+user_deposits <- rbind(liquid_deposits, nonliquid_deposits)
+user_redeems <- rbind(liquid_redeems, nonliquid_redeems)
+user_repays <- rbind(liquid_repays, nonliquid_repays)
+user_swaps <- rbind(liquid_swaps, nonliquid_swaps)
+head(user_borrows)
+```
+
+```{r}
+# add transaction dataframes to df_all 
+df_all <- merge(df_all, user_borrows, all = TRUE)
+df_all <- merge(df_all, user_deposits, all = TRUE)
+df_all <- merge(df_all, user_redeems, all = TRUE)
+df_all <- merge(df_all, user_repays, all = TRUE)
+df_all <- merge(df_all, user_swaps, all = TRUE)
+# set na values to 0
+df_all[is.na(df_all)] <- 0
+head(df_all, 2)
+```
+
+```{r}
+# eliminate users that have an outlier number of borrows (500+)
+df_all <- df_all[df_all$borrows > 1 & df_all$borrows < 500,]
+```
+
+The first set of features I try in the prediction model are the number of borrows and repays per user. I later add the other transaction types to compare the effectiveness of the model.
+
+```{r}
+# separate data into training a testing sets
+train_df <- df_all[1:(nrow(df_all) * .8),]
+train_df <- train_df[c("value", "borrows", "deposits", "redeems", "repays", "swaps")]
+test_df <- df_all[((nrow(df_all) * .8) + 1):nrow(df_all),]
+test_df <- test_df[c("value", "borrows", "deposits", "redeems", "repays", "swaps")]
+```
+
+### Logistic Regression
+
+```{r}
+# run logistic regression on training data
+logit <- glm(value ~ borrows + repays, family = binomial, data = train_df)
+```
+
+```{r}
+# predict logistic regression on testing data
+# created dataframe with predicted and expected values
+logit_prediction <- predict(logit, newdata = test_df[c(-1)], type = "response")
+logit_classify <- round(logit_prediction, digits = 0)
+logit_df <- data.frame(
+  predicted = logit_classify,
+  actual = test_df[c(1)]
+)
+```
+
+```{r}
+# display results of logistic regression
+logit_df %>%
+  count(predicted == value)
+```
+
+```{r}
+confusionMatrix(table(logit_classify, test_df[[c(1)]]))
+```
+
+Looking at the confusion matrix, our balanced accuracy is 53.6% which is similar to straight up guessing. The overall accuracy is 85.9% which is extremely over-inflated because around 95% of the sample are users who haven't been liquidated yet. The model therefore assumes almost everyone is in that group. 
+
+```{r}
+# plot the results of the logistic regression model
+logit_results <- test_df
+logit_results$predicted <- logit_classify
+ggplot() +
+  geom_point(data = logit_results, 
+             mapping = aes(x = borrows, 
+                                  y = repays, 
+                                  colour = (value == predicted))) +
+  ggtitle("Logistic Regression Classification Results")
+```
+
+### Random Forest
+
+```{r}
+# train random forest model
+rf = randomForest(x = train_df[c("borrows", "repays")],
+                          y = train_df$value,
+                          ntree = 500, random_state = 0)
+```
+
+```{r}
+# run random forest prediction model and aggregate results
+rf_prediction = predict(rf, newdata = test_df[c("borrows", "repays")])
+rf_classify = round(rf_prediction, digits = 0)
+rf_df <- data.frame(
+  predicted = rf_classify,
+  actual = test_df[c(1)]
+)
+```
+
+```{r}
+# display results of random forest prediction
+rf_df %>%
+  count(predicted == value)
+```
+
+```{r}
+confusionMatrix(table(rf_classify, test_df[[c(1)]]))
+```
+
+Similarly to the logistic regression model, the random forest model does no better than a coin flip despite the balanced accuracy being high. 
+
+```{r}
+# plot the results of the random forest prediction model
+rf_results <- test_df
+rf_results$predicted <- rf_classify
+ggplot() +
+  geom_point(data = rf_results, 
+             mapping = aes(x = borrows, 
+                                  y = repays, 
+                                  colour = (value == predicted))) +
+  ggtitle("Random Forest Classification Results")
+```
+
+```{r}
+# run logistic regression on training data with all transaction types as a features
+logit_all <- glm(value ~ borrows + deposits + redeems + repays + swaps, family = binomial, data = train_df)
+summary(logit_all)
+```
+
+```{r}
+# predict logistic regression on testing data
+# create data frame with predicted and expected values
+logit_all_prediction <- predict(logit_all, newdata = test_df[c(-1)], type = "response")
+logit_all_classify <- round(logit_all_prediction, digits = 0)
+logit_all_df <- data.frame(
+  predicted = logit_all_classify,
+  actual = test_df[c(1)]
+)
+```
+
+```{r}
+# display results of logistic regression
+logit_all_df %>%
+  count(predicted == value)
+```
+
+```{r}
+confusionMatrix(table(logit_all_classify, test_df[[c(1)]]))
+```
+
+There is improved balanced accuracy but I believe I need to go in a different direction with feature creation and selection.
+
+## Who are the Bad Borrowers in AAVE?
+
+```{r}
+# load interest rates data
+rates_df <- read_csv('../../Data/rates.csv')
+tail(rates_df, 2)
+```
+
+```{r}
+# create a new column in date format using timestamp variable
+rates_df <- rates_df[order(rates_df$timestamp),]
+rates_posixt <- as.POSIXct(rates_df$timestamp, origin = "1970-01-01")
+rates_df$date <- as.Date(rates_posixt)
+```
+
+```{r}
+# calculate median variable and stable rates for USDC
+usdc_stableRates <- df %>%
+  group_by(date) %>%
+  filter(reserve == as.character("USDC") & borrowRateMode == "Stable") %>%
+  summarize(stableRate = median(borrowRate))
+usdc_variableRates <- df %>%
+  group_by(date) %>%
+  filter(reserve == as.character("USDC") & borrowRateMode == "Variable") %>%
+  summarize(variableRate = median(borrowRate))
+usdc_rates <- merge(usdc_stableRates, usdc_variableRates)
+head(usdc_rates)
+```
+
+```{r}
+# break date into month, week, and day for time series heatmap
+usdc_rates$year <- format(usdc_rates$date, format = "%Y")
+usdc_rates$month <- month.abb[month(usdc_rates$date)]
+usdc_rates$monthweek <- ceiling(day(usdc_rates$date) / 7)
+usdc_rates$day <- c("Sun", "Mon", "Tue", "Wed", "Thu", 
+    "Fri", "Sat")[as.POSIXlt(usdc_rates$date)$wday + 1]
+# assign outliers to 30 for heatmap scaling
+usdc_rates$stableRate[usdc_rates$stableRate > 30] <- 30
+usdc_rates$variableRate[usdc_rates$variableRate > 30] <- 30
+usdc_rates <- usdc_rates[usdc_rates$date >= "2021-01-01",]
+head(usdc_rates)
+```
+
+```{r}
+# create USDC stable rate time series heatmap
+usdc_stable_plot <- ggplot(usdc_rates, aes(monthweek, factor(day, levels = c("Thu", "Wed", "Tue", "Mon", "Sun", "Sat", "Fri")), fill = stableRate)) +
+  geom_tile(colour = "white") + 
+  facet_grid(year ~ factor(month, levels = c("Jan", "Feb","Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct"))) +
+  scale_fill_gradient(low="green", high="red") +
+  labs(x="Week of Month",
+       y="",
+       title="USDC Stable Borrow Rates in 2021", 
+       fill="Rate (%)") +
+  scale_colour_manual(values = NA)
+```
+
+```{r}
+# create USDC variable rate time series heatmap
+usdc_variable_plot <- ggplot(usdc_rates, aes(monthweek, factor(day, levels = c("Thu", "Wed", "Tue", "Mon", "Sun", "Sat", "Fri")), fill = variableRate)) +
+  geom_tile(colour = "white") + 
+  facet_grid(year ~ factor(month, levels = c("Jan", "Feb","Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct"))) +
+  scale_fill_gradient(low="green", high="red") +
+  labs(x="Week of Month",
+       y="",
+       title="USDC Variable Borrow Rates in 2021", 
+       fill="Rate (%)") +
+  scale_colour_manual(values = NA)
+```
+
+```{r}
+# combine USDC heatmaps into one visualization
+ggarrange(
+  usdc_stable_plot, usdc_variable_plot
+  )
+```
+
+The heatmaps show the variable and stable interest rates of USDC in calendar format. We see that higher rates occur earlier in 2021.
+
+```{r}
+# calculate median variable and stable rates for USDT
+usdt_stableRates <- df %>%
+  group_by(date) %>%
+  filter(reserve == as.character("USDT") & borrowRateMode == "Stable") %>%
+  summarize(stableRate = median(borrowRate))
+usdt_variableRates <- df %>%
+  group_by(date) %>%
+  filter(reserve == as.character("USDT") & borrowRateMode == "Variable") %>%
+  summarize(variableRate = median(borrowRate))
+usdt_rates <- merge(usdt_stableRates, usdt_variableRates)
+```
+
+```{r}
+# break date into month, week, and day for time series heatmap
+usdt_rates$year <- format(usdt_rates$date, format = "%Y")
+usdt_rates$month <- month.abb[month(usdt_rates$date)]
+usdt_rates$monthweek <- ceiling(day(usdt_rates$date) / 7)
+usdt_rates$day <- c("Sun", "Mon", "Tue", "Wed", "Thu", 
+    "Fri", "Sat")[as.POSIXlt(usdt_rates$date)$wday + 1]
+# assign outliers to 30 for heatmap scaling
+usdt_rates$stableRate[usdt_rates$stableRate > 30] <- 30
+usdt_rates$variableRate[usdt_rates$variableRate > 30] <- 30
+usdt_rates <- usdt_rates[usdt_rates$date >= "2021-01-01",]
+```
+
+```{r}
+# create USDT stable rate time series heatmap
+usdt_stable_plot <- ggplot(usdt_rates, aes(monthweek, factor(day, levels = c("Thu", "Wed", "Tue", "Mon", "Sun", "Sat", "Fri")), fill = stableRate)) +
+  geom_tile(colour = "white") + 
+  facet_grid(year ~ factor(month, levels = c("Jan", "Feb","Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct"))) +
+  scale_fill_gradient(low="green", high="red") +
+  labs(x="Week of Month",
+       y="",
+       title="USDT Stable Borrow Rates in 2021", 
+       fill="Rate (%)") +
+  scale_colour_manual(values = NA)
+```
+
+```{r}
+# create USDT variable rate time series heatmap
+usdt_variable_plot <- ggplot(usdt_rates, aes(monthweek, factor(day, levels = c("Thu", "Wed", "Tue", "Mon", "Sun", "Sat", "Fri")), fill = variableRate)) +
+  geom_tile(colour = "white") + 
+  facet_grid(year ~ factor(month, levels = c("Jan", "Feb","Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct"))) +
+  scale_fill_gradient(low="green", high="red") +
+  labs(x="Week of Month",
+       y="",
+       title="USDT Variable Borrow Rates in 2021", 
+       fill="Rate (%)") +
+  scale_colour_manual(values = NA)
+```
+
+```{r}
+# combine USDT heatmaps into one visualization
+ggarrange(
+  usdt_stable_plot, usdt_variable_plot
+)
+```
+
+Similarly to USDC, USDT had higher rates in the first few months of 2021.
+
+```{r}
+# calculate median variable and stable rates for DAI
+dai_stableRates <- df %>%
+  group_by(date) %>%
+  filter(reserve == as.character("DAI") & borrowRateMode == "Stable") %>%
+  summarize(stableRate = median(borrowRate))
+dai_variableRates <- df %>%
+  group_by(date) %>%
+  filter(reserve == as.character("DAI") & borrowRateMode == "Variable") %>%
+  summarize(variableRate = median(borrowRate))
+dai_rates <- merge(dai_stableRates, dai_variableRates)
+head(dai_rates)
+```
+
+```{r}
+# break date into month, week, and day for time series heatmap
+dai_rates$year <- format(dai_rates$date, format = "%Y")
+dai_rates$month <- month.abb[month(dai_rates$date)]
+dai_rates$monthweek <- ceiling(day(dai_rates$date) / 7)
+dai_rates$day <- c("Sun", "Mon", "Tue", "Wed", "Thu", 
+    "Fri", "Sat")[as.POSIXlt(dai_rates$date)$wday + 1]
+dai_rates <- dai_rates[dai_rates$date >= "2021-01-01",]
+```
+
+```{r}
+# create DAI stable rate time series heatmap
+dai_stable_plot <- ggplot(dai_rates, aes(monthweek, factor(day, levels = c("Thu", "Wed", "Tue", "Mon", "Sun", "Sat", "Fri")), fill = stableRate)) +
+  geom_tile(colour = "white") + 
+  facet_grid(year ~ factor(month, levels = c("Jan", "Feb","Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct"))) +
+  scale_fill_gradient(low="green", high="red") +
+  labs(x="Week of Month",
+       y="",
+       title="DAI Stable Borrow Rates in 2021", 
+       fill="Rate (%)") +
+  scale_colour_manual(values = NA)
+```
+
+```{r}
+# create DAI variable rate time series heatmap
+dai_variable_plot <- ggplot(dai_rates, aes(monthweek, factor(day, levels = c("Thu", "Wed", "Tue", "Mon", "Sun", "Sat", "Fri")), fill = variableRate)) +
+  geom_tile(colour = "white") + 
+  facet_grid(year ~ factor(month, levels = c("Jan", "Feb","Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct"))) +
+  scale_fill_gradient(low="green", high="red") +
+  labs(x="Week of Month",
+       y="",
+       title="DAI Variable Borrow Rates in 2021", 
+       fill="Rate (%)") +
+  scale_colour_manual(values = NA)
+```
+
+```{r}
+ggarrange(
+  dai_stable_plot, dai_variable_plot
+)
+```
+
+Since variable borrow rates can fluctuate greatly each day, it is difficult to classify the variable borrows as "bad" because it can recover the next day. Borrowing at higher stable rates has greater potential to get the user in trouble.
+
+```{r}
+# put outliers back in data set, only care about percentiles
+usdc_rates[is.na(usdc_rates)] <- 30
+# summarize USDC stable borrow rate statistics
+summary(usdc_rates$stableRate)
+```
+
+```{r}
+# put outliers back in data set, only care about percentiles
+usdt_rates[is.na(usdt_rates)] <- 30
+# summarize USDT stable borrow rate statistics
+summary(usdt_rates$stableRate)
+```
+
+```{r}
+# put outliers back in data set, only care about percentiles
+dai_rates[is.na(dai_rates)] <- 30
+# summarize DAI stable borrow rate statistics
+summary(dai_rates$stableRate)
+```
+
+I will define my statistic for a "good borrow day" as any day when the interest rate is between the min and first quartile. I will define a "bad borrow day" as any day when the interest rate is between the third quartile and the max.
+
+```{r}
+# get dates where the stable rate is greater than the third quartile
+usdc_b_borrow_days <- usdc_rates[usdc_rates$stableRate > 14.166,]$date
+usdt_b_borrow_days <- usdt_rates[usdt_rates$stableRate > 14.89,]$date
+dai_b_borrow_days <- dai_rates[dai_rates$stableRate > 16.182,]$date
+```
+
+```{r}
+# filter out stable borrows from the main transaction dataset
+usdc_bad_borrows <- df %>%
+  group_by(date) %>%
+  filter(borrowRateMode == "Stable" & reserve == as.character("USDC"))
+usdt_bad_borrows <- df %>%
+  group_by(date) %>%
+  filter(borrowRateMode == "Stable" & reserve == as.character("USDT"))
+dai_bad_borrows <- df %>%
+  group_by(date) %>%
+  filter(borrowRateMode == "Stable" & reserve == as.character("DAI"))
+```
+
+```{r}
+# get borrows that occur on bad borrow days
+usdc_bad_borrows <- usdc_bad_borrows[usdc_bad_borrows$date %in% usdc_b_borrow_days,]
+usdt_bad_borrows <- usdt_bad_borrows[usdt_bad_borrows$date %in% usdt_b_borrow_days,]
+dai_bad_borrows <- dai_bad_borrows[dai_bad_borrows$date %in% dai_b_borrow_days,]
+```
+
+```{r}
+# Percentage of bad USDC borrows in 2021
+pct_usdc_b_borrows <- nrow(usdc_bad_borrows) /
+nrow(df[df$borrowRateMode == "Stable" & 
+        df$reserve == as.character("USDC") & 
+        df$date >= "2021-01-01",])
+pct_usdc_b_borrows
+```
+
+```{r}
+# Percentage of bad USDT borrows in 2021
+pct_usdt_b_borrows <- nrow(usdt_bad_borrows) /
+nrow(df[df$borrowRateMode == "Stable" & 
+        df$reserve == as.character("USDT") & 
+        df$date >= "2021-01-01",])
+pct_usdt_b_borrows
+```
+
+```{r}
+# Percentage of bad DAI borrows in 2021
+pct_dai_b_borrows <- nrow(dai_bad_borrows) /
+nrow(df[df$borrowRateMode == "Stable" & 
+        df$reserve == as.character("DAI") & 
+        df$date >= "2021-01-01",])
+pct_dai_b_borrows
+```
+
+```{r}
+# create dataframe to use in bar chart 
+bad_borrows_comparison_df <- data.frame(
+  reserve = c("USDC", "USDT", "DAI", "USDC", "USDT", "DAI"),
+  type = c("Actual", "Actual", "Actual", "Expected", "Expected", "Expected"),
+  value = c(pct_usdc_b_borrows * 100, 
+            pct_usdt_b_borrows * 100, 
+            pct_dai_b_borrows * 100,
+            length(usdc_b_borrow_days) / nrow(usdc_rates) * 100, 
+            length(usdt_b_borrow_days) / nrow(usdt_rates) * 100, 
+            length(usdc_b_borrow_days) / nrow(usdc_rates) * 100)
+)
+
+# Plot as a bar chart
+ggplot(bad_borrows_comparison_df, aes(factor(reserve), value, fill = type)) + 
+  geom_bar(stat="identity", position = "dodge") +
+  geom_text(aes(label = round(value, digits = 2)), vjust = -0.2,
+            position = position_dodge(0.9)) +
+  xlab("Reserve") +
+  ylab("Percent") +
+  ggtitle("Percentage of Stable Borrows that Occur on High Interest Rate Days")
+```
+
+Since the third quartile to the max stable borrow rates is expected to account for 25% of users, this bar plot shows the actual percentage of borrows that occur on bad borrow days. We see lower percentages of borrows on high interest rate days which is exactly what we should expect. However, the difference isn't as great I would expect. Large numbers of borrows are happening at extraordinarily high stable rates.
+
+```{r}
+# of USDC bad borrowers, calculate bad borrow percentage and frequency of USDC stable borrows
+usdc_bad_stable_borrowers <- usdc_bad_borrows %>%
+  group_by(onBehalfOf_alias) %>%
+  summarize(usdc = n())
+usdc_stable_borrowers <- df %>%
+  group_by(onBehalfOf_alias) %>%
+  filter(borrowRateMode == "Stable" & 
+         reserve == as.character("USDC") & 
+         date >= "2021-01-01") %>%
+  summarize(usdc_pct = n())
+usdc_bad_stable_borrowers <- merge(usdc_bad_stable_borrowers, usdc_stable_borrowers)
+usdc_bad_stable_borrowers$usdc_pct <- round(usdc_bad_stable_borrowers$usdc / usdc_bad_stable_borrowers$usdc_pct, digits = 2)
+head(usdc_bad_stable_borrowers)
+```
+
+```{r}
+# of USDT bad borrowers, calculate bad borrow percentage and frequency of USDT stable borrows
+usdt_bad_stable_borrowers <- usdt_bad_borrows %>%
+  group_by(onBehalfOf_alias) %>%
+  summarize(usdt = n())
+usdt_stable_borrowers <- df %>%
+  group_by(onBehalfOf_alias) %>%
+  filter(borrowRateMode == "Stable" & 
+         reserve == as.character("USDT") & 
+         date >= "2021-01-01") %>%
+  summarize(usdt_pct = n())
+usdt_bad_stable_borrowers <- merge(usdt_bad_stable_borrowers, usdt_stable_borrowers)
+usdt_bad_stable_borrowers$usdt_pct <- round(usdt_bad_stable_borrowers$usdt / usdt_bad_stable_borrowers$usdt_pct, digits = 2)
+head(usdt_bad_stable_borrowers)
+```
+
+```{r}
+# of DAI bad borrowers, calculate bad borrow percentage and frequency of DAI stable borrows
+dai_bad_stable_borrowers <- dai_bad_borrows %>%
+  group_by(onBehalfOf_alias) %>%
+  summarize(dai = n())
+dai_stable_borrowers <- df %>%
+  group_by(onBehalfOf_alias) %>%
+  filter(borrowRateMode == "Stable" & 
+         reserve == as.character("DAI") & 
+         date >= "2021-01-01") %>%
+  summarize(dai_pct = n())
+dai_bad_stable_borrowers <- merge(dai_bad_stable_borrowers, dai_stable_borrowers)
+dai_bad_stable_borrowers$dai_pct <- round(dai_bad_stable_borrowers$dai / dai_bad_stable_borrowers$dai_pct, digits = 2)
+head(dai_bad_stable_borrowers)
+```
+
+```{r}
+# merge dataframes into one for all bad borrowers of Stable USDC, USDT, and DAI
+bad_stable_borrowers <- merge(usdc_bad_stable_borrowers, usdt_bad_stable_borrowers, all = TRUE)
+bad_stable_borrowers <- merge(bad_stable_borrowers, dai_bad_stable_borrowers, all = TRUE)
+bad_stable_borrowers[is.na(bad_stable_borrowers)] <- 0
+head(bad_stable_borrowers)
+```
+
+```{r}
+# interactive and filterable dataframe
+reactable(bad_stable_borrowers)
+```
+
+Kathy Lorenz, Herman Arno, Dorthy Thomas, Beatrice Rodriguez, etc. appear to be the most conistent bad borrowers. 
+
+```{r}
+# find bad borrowers who have made at least 10 bad borrows
+worst_borrowers <- bad_stable_borrowers[bad_stable_borrowers$usdc >= 10 |
+                                        bad_stable_borrowers$usdt >= 10 |
+                                        bad_stable_borrowers$dai >= 10,]
+unique(worst_borrowers$onBehalfOf_alias)
+```
+
+```{r}
+# of the 25 bad borrowers, find the ones who have liquidated
+worst_borrowers_df <- df[df$onBehalfOf_alias %in% unique(worst_borrowers$onBehalfOf_alias),]
+worst_liquidators_df <- df[df$user_alias %in% unique(worst_borrowers$onBehalfOf_alias),]
+worst_liquidators_df <- worst_liquidators_df[worst_liquidators_df$type == "liquidation",]
+bad_liquidator_users <- unique(worst_liquidators_df$user_alias)
+bad_liquidator_users
+```
+
+Of the 25 frequent bad borrowers, 15 have already had at least one liquidation.
+
+```{r}
+borrowers_br <- worst_borrowers_df %>%
+  select("onBehalfOf_alias", "type", "amountUSD") %>%
+  filter(type == "borrow" | type == "repay") %>%
+  group_by(onBehalfOf_alias, type) %>%
+  summarize_all(sum)
+borrowers_br <- borrowers_br %>%
+  group_by(onBehalfOf_alias) %>%
+  mutate(amountUSD_prop = 100 * amountUSD / sum(amountUSD))
+borrowers_br$liquidator <- ifelse(borrowers_br$onBehalfOf_alias %in% bad_liquidator_users, "Yes", "No")
+borrowers_br
+```
+
+I want to compare the amount of USD borrowed versus the amount repayed and see the difference between users who have been liquidated and users who haven't.
+
+```{r}
+# bar chart to compare the USD borrowed versus repayed
+ggplot(borrowers_br) + 
+  geom_bar(mapping = aes(x = type, y = amountUSD_prop, fill = liquidator), stat = "identity") + 
+  facet_wrap(~ onBehalfOf_alias, ncol = 5) +
+  ggtitle("Proportion of Borrowed USD to Repayed USD by Bad Borrowers") +
+  ylab("Percent")
+```
+
+It makes sense for the people who have borrowed a lot and repayed very little to have been liquidated in their past. For people like Lucio Hargis, I'm curious if they've only borrowed very recently.
+
+```{r}
+worst_borrowers_df %>%
+  filter(type == "borrow") %>%
+  group_by(onBehalfOf_alias) %>%
+  filter(row_number() == n()) %>%
+  select("onBehalfOf_alias", "date") %>%
+  arrange(onBehalfOf_alias)
+```
+
+```{r}
+# dates that Lucio Hargis borrowed
+worst_borrowers_df[worst_borrowers_df$onBehalfOf_alias == "Lucio Hargis" &
+                   worst_borrowers_df$type == "borrow",]$date
+```
+
+As expected, Lucio has made a lot of borrows in the past couple months. I'm sure Lucio's health factor is worsening and could be on the verge of liquidation.
+
+```{r}
+# dates that Kathy Lorenz borrwed
+kathy_dates <- worst_borrowers_df[worst_borrowers_df$onBehalfOf_alias == "Kathy Lorenz" &
+                   worst_borrowers_df$type == "borrow",]$date
+kathy_dates[1]
+kathy_dates[length(kathy_dates)]
+```
+
+Kathy has made borrows from the very beginning and is quite active almost every day. Next notebook I'd like to understand how health factors are calculated. I'm surprised Kathy hasn't been liquidated. 
+
+```{r}
+# transaction breakdown of Kathy Lorenz
+kathy_df <- df[df$onBehalfOf_alias == "Kathy Lorenz",]
+kathy_distribution <- kathy_df %>% count(type)
+
+ggplot(data = kathy_distribution, aes(x = type, y = n)) +
+  geom_bar(stat="identity", color = "blue", fill = "white") +
+  xlab("Transaction Type") +
+  ylab("Count") + 
+  ggtitle("Kathy Lorenz Transaction Type Breakdown") +
+  geom_text(aes(label = n, vjust = -.5))
+```
+
+```{r}
+# plot Kathy's transaction history
+kathy_transactions <- kathy_df %>%
+  filter(date >= "2021-01-01") %>%
+  group_by(date) %>%
+  summarize(transactions = n())
+ggplot(kathy_transactions, aes(x = date, y = transactions)) +
+    geom_line() +
+    ggtitle("Kathy Lorenz Transactions Per Day") +
+    scale_x_date(date_breaks = "1 month", date_labels = "%b-%y")
+```
+
+Kathy appears to be a super user by making transactions almost every day. Looking back to one of my previous data frames, she's borrowed 13 million USD and repayed 2 million USD. While that seems like a lot, there are bad borrowers who have borrowed much more. I'm not sure how to characterize these users but is definitely something to look into. 
+
+# Conclusion
+
+Overall, much of this analysis would benefit from knowing the health factor of the user. Starting with predicting who will be a liquidator, I would've liked to try to even out the decision variables to minimize over-fitting. I think more thought has to go into the feature engineering. Next notebook I want to try to calculate health factor and use that as the main feature driving the model.
+
+From my bad borrow analysis, I liked being able to breakdown a subset of users to try to understand their patterns and activities. In general, most people who have frequently made bad stable borrows have either been liquidated or are a new user in AAVE. I will continue to think more why some users like Kathy Lorenz have not been liquidated yet. I also want to look for good borrowers. I hypothesize that most of the yield farmers will be good borrowers. I also want to look at some of my teammate's survival plots more closely to help find bad variable borrowers. I need the survival plots because I'd like to know the average time most people take to pay back a loan so I can average out variable rates over that period of time.
+
+
+
+
+
+
