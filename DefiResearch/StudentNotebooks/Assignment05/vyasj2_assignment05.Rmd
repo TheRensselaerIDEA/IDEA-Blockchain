@@ -1,11 +1,38 @@
 ---
-title: "Analysis v2"
+title: "vyasj2 Homework5"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+
+## Bi-Weekly Work Summary	
+
+* RCS ID: vyasj2
+* Project Name: IDEA-Blockchain
+* Summary of work for last 2 weeks 
+
+    * Used the transactionsv2 data that Chris provided to run some more survival analysis for the bigger goal of creating a table or chart that depicts coin instability vs liquidation rate.
+    
+* Summary of github commits 
+
+    * dar-vyasj2
+    * https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/dar-vyasj2/DefiResearch/StudentNotebooks/analysisv2.Rmd
+    * All done by me
+
+## Personal Contribution	
+
+* The idea was to be able to graph coin instability (i.e., fluctuations in price), against the liquidation rate so come up with some meaningful statistics that would help determine when are the most/least dangerous times to borrow, what kind of borrow parameters are the most/least dangerous, and the circumstances that existed when borrow liquidated. 
+
+## Discussion	
+
+* Discuss primary findings: 
+
+    * I wanted to know the relationship between fluctuation of coin price to rate of liquidation 
+    * I started by filtering down the dataset to only WETH borrows, since it's not pegged to anything so there should be a good amount of instability, and because ETH is a very commonly used currency. I then graphed the difference between the price of WETH that the borrow was made at and the price of WETH that the borrow was liquidated at. I thought this would be of value because it would show us how the difference in price between these two values changes over time. My idea was that this might show some sort of pattern between the prices which would give us insight into the variability of the price.
+    * I then started to graph Kaplan-Meier Survival Curves of the probability of a WETH loan's survival over time based on different factors, like the type of borrow rate (stable or variable), and the principal reserve. My goal with this was to see how different categorical variables might affect the survival rate of a loan over time. There are a lot of things to be seen from the principal reserve graph, as there are a lot of different reserves that each give a different probability over time. I then created a multivariate Cox Proportional-Hazards Model that took into account both of these variables, the type of borrow rate and the principal reserve. It has a very large confidence interval at the middle, indicating that there is a very large variability when we use these two factors to describe the data.
+    * The next steps would be to find variables that lower this variability as much as possible, and then make the correlation between fluctuation of reserve price and rate or probability of liquidation.
 
 ```{r}
 if (!require(readr)) {
@@ -51,16 +78,9 @@ if (!require("plotly")) {
 ```
 
 ```{r}
-df <- read_rds("../Data/transactionsv2.rds")
-head(df)
-```
-
-```{r}
+df <- read_rds("../../Data/transactionsv2.rds")
 df <- df %>%
-  dplyr::mutate(date=as_datetime(timestamp)) %>%
-  dplyr::mutate(day=format(date,format="%d")) %>%
-  dplyr::mutate(month=format(date,format="%m"))
-
+  dplyr::mutate(date=as_datetime(timestamp))
 head(df)
 ```
 
@@ -114,12 +134,11 @@ wethBorrowLiquids <- left_join(wethBorrows,wethLiquids,by="user") %>%
   dplyr::filter(priceDiff>0) %>%
   dplyr::select(user,reservePriceUSD,timestamp,date,type,reservePriceUSDPrincipal,principalReserve,timeDiff,status,borrowRateMode,priceDiff)
 
-wethBorrowLiquids
-unique(wethBorrowLiquids$status)
-max(wethBorrowLiquids$timeDiff)
+head(wethBorrowLiquids)
+
 ggplot(wethBorrowLiquids,aes(x=as.Date(date),y=priceDiff)) + 
   geom_line() + 
-  ggtitle("Difference in Price of Price Borrowed at and Price Liquidated at Over Time") + 
+  ggtitle("Difference Between Price Borrowed at and Price Liquidated at Over Time") + 
   scale_x_date(date_labels="%m-%y") + 
   xlab("Date") + 
   ylab("Price Difference")
@@ -132,7 +151,8 @@ km <- with(wethBorrowLiquids,Surv(timeDiff,status))
 head(km,25)
 km_fit <- survfit(Surv(timeDiff,status) ~ 1, data=wethBorrowLiquids)
 summary(km_fit, times = c(1,30,60,90*(1:10)))
-ggsurvplot(km_fit, conf.int = TRUE, xlim = c(0,300), ylim = c(0.85,1))
+ggsurvplot(km_fit, conf.int = TRUE, xlim = c(0,300), ylim = c(0.85,1)) + 
+  ggtitle("Survival Probability of Borrow Until Liquidation Over Time (max. 300 Days)")
 ```
 
 ```{r}
@@ -140,7 +160,8 @@ km2 <- with(wethBorrowLiquids,Surv(timeDiff,status))
 head(km2,25)
 km_fit_brm <- survfit(Surv(timeDiff,status) ~ borrowRateMode, data=wethBorrowLiquids)
 summary(km_fit_brm, times = c(1,30,60,90*(1:10)))
-ggsurvplot(km_fit_brm, conf.int = TRUE, xlim = c(0,300), ylim = c(0.84,1))
+ggsurvplot(km_fit_brm, conf.int = TRUE, xlim = c(0,300), ylim = c(0.84,1)) + 
+  ggtitle("Survival Probability of Borrow Until Liquidation Over Time By Borrow Rate Mode (max. 300 Days)")
 ```
 
 ```{r}
@@ -149,7 +170,8 @@ km3 <- with(wethBorrowLiquids,Surv(timeDiff,status))
 head(km3,25)
 km_fit_cr <- survfit(Surv(timeDiff,status) ~ principalReserve, data=wethBorrowLiquids)
 summary(km_fit_cr, times = c(1,30,60,90*(1:10)))
-ggsurvplot(km_fit_cr)
+ggsurvplot(km_fit_cr) + 
+  ggtitle("Survival Probability of Borrow Until Liquidation Over Time By Principal Reserve of Loan")
 ```
 
 ```{r}
@@ -157,11 +179,8 @@ cox <- coxph(Surv(timeDiff,status) ~ borrowRateMode + principalReserve,
              data=wethBorrowLiquids)
 summary(cox)
 cox_fit <- survfit(cox)
-autoplot(cox_fit)
+autoplot(cox_fit) + 
+  ggtitle("Proportional Hazards Graph of Survival Probability of Borrow Until Liquidation Over Time By Borrow Rate Mode, Principal Reserve of Loan") + 
+  xlab("Time") + 
+  ylab("Survival Probability")
 ```
-
-```{r}
-# coin instability vs rate of liquidation
-
-```
-
