@@ -138,11 +138,11 @@ ggplot(liquidModes,aes(x=borrowRateMode)) + geom_bar()
 
 ```{r}
 liquidStable <- liquidModes %>%
-  filter(borrowRateMode=="Stable" & amountUSD <= 5000000 & borrowRate <= 20) %>%
+  filter(borrowRateMode=="Stable") %>%
   select(borrowRate,reserve,amountUSD,timestamp)
 
 liquidVariable <- liquidModes %>%
-  filter(borrowRateMode=="Variable" & amountUSD <= 25000000 & borrowRate <= 5) %>%
+  filter(borrowRateMode=="Variable") %>%
   select(borrowRate,reserve,amountUSD,timestamp)
 
 ggplot(liquidStable,aes(x=reserve,y=borrowRate)) + geom_boxplot(outlier.shape=NA) + ggtitle("Borrow Rate for Every Stable Borrow that Liquidated by Reserve")
@@ -171,7 +171,7 @@ roll_big_liquidStable <- big_liquidStable %>%
   dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA)) %>%
   dplyr::mutate(rollingAvg90=zoo::rollmean(borrowRate,k=90,fill=NA))
 
-ggplot(roll_big_liquidStable, aes(x=as_datetime(timestamp),y=rollingAvg90)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("90-Day Rolling Average for Stable Borrow Rates that Liquidated over Time")
+ggplot(roll_big_liquidStable, aes(x=as_datetime(timestamp),y=rollingAvg21)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("21-Day Rolling Average for Stable Borrow Rates that Liquidated over Time") + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
 
 roll_big_liquidVariable <- big_liquidVariable %>%
   dplyr::arrange(timestamp) %>%
@@ -179,7 +179,69 @@ roll_big_liquidVariable <- big_liquidVariable %>%
   dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA)) %>%
   dplyr::mutate(rollingAvg90=zoo::rollmean(borrowRate,k=90,fill=NA))
 
-ggplot(roll_big_liquidVariable, aes(x=as_datetime(timestamp),y=rollingAvg90)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("90-Day Rolling Average for Variable Borrow Rates that Liquidated over Time")
+ggplot(roll_big_liquidVariable, aes(x=as_datetime(timestamp),y=rollingAvg21)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("21-Day Rolling Average for Variable Borrow Rates that Liquidated over Time") + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
 ```
 
+```{r}
+nonLiquid <- subset(borrows2, !(user %in% liquidations$user))
 
+nonLiquid
+ggplot(nonLiquid,aes(x=borrowRateMode)) + geom_bar()
+```
+
+```{r}
+nonLiquidStable <- nonLiquid %>%
+  filter(borrowRateMode=="Stable")
+
+nonLiquidVariable <- nonLiquid %>%
+  filter(borrowRateMode=="Variable")
+
+ggplot(nonLiquidStable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Stable Borrows that did NOT Liquidate")
+ggplot(nonLiquidVariable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Variable Borrows that did NOT Liquidate")
+```
+
+```{r}
+big_nonLiquidStable <- nonLiquidStable %>%
+  filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI")
+
+big_nonLiquidVariable <- nonLiquidVariable %>%
+  filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI")
+```
+
+```{r}
+roll_big_nonLiquidStable <- big_nonLiquidStable %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg=zoo::rollmean(borrowRate,k=1,fill=NA)) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA)) %>%
+  dplyr::mutate(rollingAvg90=zoo::rollmean(borrowRate,k=90,fill=NA))
+
+ggplot(roll_big_nonLiquidStable, aes(x=as_datetime(timestamp),y=rollingAvg21)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("21-Day Rolling Average for Stable Borrow Rates that Did Not Liquidate over Time") + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
+
+roll_big_nonLiquidVariable <- big_nonLiquidVariable %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg=zoo::rollmean(borrowRate,k=1,fill=NA)) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA)) %>%
+  dplyr::mutate(rollingAvg90=zoo::rollmean(borrowRate,k=90,fill=NA))
+
+ggplot(roll_big_nonLiquidVariable, aes(x=as_datetime(timestamp),y=rollingAvg21)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("21-Day Rolling Average for Variable Borrow Rates that Did Not Liquidate over Time") + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
+```
+
+```{r}
+roll_borrows_stable <- borrows %>%
+  filter(borrowRateMode=="Stable") %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA))
+
+roll_borrows_variable <- borrows %>%
+  filter(borrowRateMode=="Variable" & borrowRate <= 100) %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA))
+
+ggplot(roll_borrows_stable, aes(x=as_datetime(timestamp),y=rollingAvg21)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("21-Day Rolling Average for Stable Borrow Rates over Time") + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
+
+ggplot(roll_borrows_variable, aes(x=as_datetime(timestamp),y=rollingAvg21)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("21-Day Rolling Average for Variable Borrow Rates over Time") + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
+```
+
+Regardless of whether or not you liquidate, the 21-day average looks roughly the same. Maybe Borrow Rate doesn't affect Liquidation?
+
+rate of liquidation vs coin instability

@@ -1,0 +1,268 @@
+---
+title: "DAR F21 Project Status Notebook Template"
+author: "Aaron Green"
+date: "10/13/2021"
+output:
+  html_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+subtitle: "DeFi Project"
+---
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+# CAUTION: DO NOT interrupt R as it installs packages!!
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dp)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+if (!require("plotly")) {
+  install.packages("plotly")
+  library(plotly)
+}
+if(!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+if(!require("survival")) {
+  install.packages("survival")
+  library(survival)
+}
+if(!require("survminer")) {
+  install.packages('survminer')
+  library(survminer)
+}
+if(!require("ranger")){
+  install.packages("ranger")
+  library(ranger)
+}
+if(!require("ggfortify")){
+  install.packages("ggfortify")
+  library(ggfortify)
+}
+
+```
+
+# Prepare Transaction Data
+
+We begin by loading our prepared AAVE transaction data into a dataframe. The dataset has over 400,000 rows, and 27 columns. 
+
+We are directly loading the dataframe from an Rds archive instead of a CSV file to conserve space. 
+
+```{r}
+#load Rds (binary version of csv file) into dataframe
+df<-read_rds('../../Data/transactions.Rds')
+```
+For readability in the future let's add a column to the data with the datetimes of each transaction.
+```{r}
+df <- df %>%
+  mutate(datetime = as_datetime(timestamp))
+```
+
+# Analyze Swap Data:
+
+First we select the columns from the dataframe that are relevant to Swap transactions.
+```{r}
+borrowRateSwaps <- df %>%
+  filter(type == 'swap') %>%
+  select(borrowRateModeFrom, borrowRateModeTo, reserve, variableBorrowRate, stableBorrowRate) %>%
+  group_by(borrowRateModeFrom) %>%
+  mutate(vsRatio = variableBorrowRate/stableBorrowRate)
+```
+
+Next let's separate the data into two charts: (1) Swaps from Variable to Stable; and (2) Swaps from Stable to Variable:
+```{r}
+variableSwaps <- borrowRateSwaps %>%
+  filter(borrowRateModeFrom == 'Variable')
+
+varToStable <- ggplot(variableSwaps, aes(variableBorrowRate, stableBorrowRate)) +
+  geom_point(aes(color = reserve)) +
+  ggtitle("At What Rates are Users Swapping from Variable to Stable Borrows?") +
+  geom_abline(slope = 1, intercept = 0) + 
+  xlab("Variable Borrow Rate (%APY)") +
+  ylab("Stable Borrow Rate (%APY)")
+ggplotly(varToStable)
+```
+
+```{r}
+stableSwaps <- borrowRateSwaps %>%
+  filter(borrowRateModeFrom  == 'Stable')
+
+stableToVar <- ggplot(stableSwaps, aes(stableBorrowRate, variableBorrowRate)) +
+  geom_point(aes(color = stableSwaps$reserve)) +
+  ggtitle("At What Rates are Users Swapping from Stable to Variable Borrows?") +
+  geom_abline(slope = 1, intercept = 0)+ 
+  ylab("Variable Borrow Rate (%APY)") +
+  xlab("Stable Borrow Rate (%APY)")
+ggplotly(stableToVar)
+```
+
+We see in each of the above two charts that there are seemingly distinct lines at which users tend to swap borrow rates. In chart (1), users exclusively swap from variable to stable borrow rates when the ratio of stable to variable is greater than 1. This means they are swapping to a higher borrow rate.
+
+In contrast, the second chart shows users swapping from stable borrow rates to variable borrow rates when the variable borrow rate is lower than the stable rate. This makes intuitive sense, since paying a lower interest rate on a loan is obviously beneficial. The more interesting part of the second chart is mainly that we again see distinct lines forming in the data.
+
+# Analyze Stable Borrow Rates Over Time:
+
+  From the above two charts it looks like the reserves USDT, USDC, and DAI comprise most of the swaps. Let's limit the scope of the following analysis to those three reserves, at least for now, and look at the borrow rates of the these reserves over time.
+
+  First let's filter out all but these three reserves and chart their respective Stable Borrow Rates over time:
+```{r}
+borrowsUSDT <- df %>%
+  filter(type=='borrow', reserve == 'USDT' | reserve == 'WBTC' | reserve == 'LINK')
+
+stableBorrowsUSDT <- borrowsUSDT %>%
+  filter(borrowRateMode == 'Stable')
+
+stableRatesOverTime <- ggplot(stableBorrowsUSDT, aes(datetime, borrowRate)) +
+  geom_point(aes(color = reserve)) + 
+  ggtitle("How do Stable Borrow Rates Change Over Time?") +
+  xlab("Date") + 
+  ylab("Borrow Rate (%APY)")
+
+ggplotly(stableRatesOverTime)
+```
+Much like in the previous two charts, we see these three reserves exhibiting very similar behavior. The stable borrow rates are clearly volatile, but it's interesting to see that there are definite lines that act as a floor at any given time for the stable borrow rates, and this "floor" seems to increase periodically. At a glance there seem to be three distinct "steps" for this floor. With no way to confirm this hypothesis yet, it would make some sense if each of these steps correspond to one of the distinct lines of swaps in the previous chart.
+
+# Analyze Variable Borrow Rates Over Time:
+
+  Seeing interesting behavior in the stable borrow rates over time, it's worthwhile to look at the variable borrow rates as well to see whether they follow a similar trend:
+```{r}
+variableBorrowsUSDT <- borrowsUSDT %>%
+  filter(borrowRateMode == 'Variable')
+
+varRatesOverTime <- ggplot(variableBorrowsUSDT, aes(datetime, borrowRate)) +
+  geom_point(aes(color = reserve)) + 
+  ggtitle("How Do Variable Borrow Rates Change Over Time?")+
+  xlab("Date") + 
+  ylab("Borrow Rate (%APY)")
+
+ggplotly(varRatesOverTime)
+```
+
+Here we can see similarly chaotic behavior to the stable borrow rates and the presence of a sort of "floor" to the variable borrow rates. However, the floor seems very consistent. We don't see it periodically increasing like we did with the stable borrow rates.
+
+# Convert Data to Appropriate Format for Survival Analysis
+  For tracking loans we can filter out all but a few features of the data:
+  
+```{r}
+loanData <- df %>%
+  filter(type == 'borrow' | type == 'repay') %>%
+  select(user, type, reserve, timestamp) %>%
+  arrange(timestamp)
+```
+
+```{r}
+loanDataKM <- data.frame(time=numeric(0), eventType = numeric(0), reserve = factor(levels = unique(df$reserve)))
+
+timeFinal <- loanData[nrow(loanData), "timestamp"]
+```
+
+```{r}
+borrows <- df %>%
+  filter(type=="borrow")
+
+repays <- df %>%
+  filter(type=="repay")
+
+loanDataKM <- left_join(borrows,repays,by=c("user", "reserve")) %>%
+  dplyr::rename(borrowTime=timestamp.x) %>%
+  dplyr::rename(repayTime=timestamp.y) %>%
+  group_by(user, reserve) %>%
+  dplyr::summarise(timeDiff=case_when(min(repayTime)-min(borrowTime)>0 ~ min(repayTime)-min(borrowTime), 
+                                      TRUE ~ min(borrowTime) - timeFinal)) %>%
+  mutate(status=case_when(timeDiff<=0 ~ 0, timeDiff>0 ~ 1)) %>%
+  mutate(timeDiff = abs(timeDiff))%>%
+  
+  select(user,reserve,timeDiff,status)%>%
+  ungroup()
+```
+
+# Perform the Survival Analysis
+  This code is based on the brief YouTube tutorial found here: https://youtu.be/w9h3CCHz_-g
+  
+```{r}
+loanCountReserve <- loanDataKM %>%
+  count(reserve) %>%
+  arrange(-n)
+
+stableCoins <- df %>%
+  filter(reserve == 'USDT' | reserve == 'USDC' | reserve == 'GUSD' | reserve == 'DAI' | reserve == 'WBTC' | reserve == 'SUSD' | reserve == 'TUSD') %>%
+  group_by(reserve) %>%
+  count(reserve) %>%
+  arrange(-n)
+
+ammCoins <- df %>%
+  filter(grepl('Amm', reserve))%>%
+  group_by(reserve) %>%
+  count(reserve) %>%
+  arrange(-n)
+
+
+df <- df %>%
+  mutate(reserveType = if_else(reserve %in% stableCoins$reserve, "Stable", if_else(reserve %in% ammCoins$reserve, "AMM", "Non-Stable")))
+
+reserveTypes <- df %>%
+  select(reserve, reserveType) %>%
+  distinct()
+
+loanDataKMStable <- loanDataKM %>%
+  left_join(reserveTypes) %>%
+  filter(reserve %in% head(loanCountReserve, 10)$reserve, reserveType=="Stable")
+
+km_fitStable <- survfit(Surv(as.numeric(timeDiff/86400), as.numeric(status)) ~ reserve, data=loanDataKMStable)
+
+kmPlotStable <- ggsurvplot(km_fitStable, xlab="Time (days)", ylab="Probability of No Repays", title="How Long Do Users Wait to Repay Loans (Stable Coins)?", legend.title="", censor=FALSE, conf.int = TRUE)
+
+kmPlotStable
+```
+```{r}
+loanDataKMNonStable <- loanDataKM %>%
+  left_join(reserveTypes)
+
+km_fitNonStable <- survfit(Surv(as.numeric(timeDiff/86400), as.numeric(status))~reserveType, data=loanDataKMNonStable)
+
+km_fitNonStable <- ggsurvplot(km_fitNonStable, xlab="Time (days)", ylab="Probability of No Repays", title="How Long Do Users Wait to Repay Loans?", legend.title="", censor=FALSE)
+
+km_fitNonStable
+```

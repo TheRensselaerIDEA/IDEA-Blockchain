@@ -1,0 +1,315 @@
+---
+title: "DAR F21 Project Status 4\nObserving Trends through Users' Average Transactions"
+author: "Duke Kwon"
+date: "10/14/21"
+output:
+  html_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+subtitle: "IDEA-Blockchain (DeFi)"
+---
+
+## Weekly Work Summary	
+
+* RCS ID: kwond2
+* Project Name: IDEA-Blockchain (DeFi)
+
+* General Summary:
+
+* This week, I worked on trying to observe patterns among the clusters from HDBSCAN to be able to distinguish between types of users. Mainly, lookin
+
+* I was able to locate some differences in the characteristics of the clusters, through mean heatmaps and plotting the density plots of features by cluster.
+
+* Github Commits:
+
+* Branch: dar-kwond2 (However main code will be available in this notebook)
+* Directory: https://github.rpi.edu/DataINCITE/IDEA-Blockchain/tree/master/DefiResearch/StudentNotebooks/Assignment04
+* kwond2_assignment4.Rmd
+* kwond2_assignment4.pdf
+* kwond2_assignment4.html
+    
+* References:
+
+* N/A
+
+* Shared Code Base:
+
+* Clusters generated from the previous Rmd, kwond2_assignment3.Rmd are used, otherwise no other shared codebase.
+
+## Personal Contribution	
+
+* All code and explanation in this notebook was done by me.
+
+## Discussion of Primary Findings 	
+
+* Problem: We had clusters of the users' average transactions generated from the nonlinear dimensionality reduction techniques and density based clustering, but no sense of interpreting what the clusters meant.
+
+* Proposed Solution: We use visualization tools such as heatmaps and density estimates of the features to compare differences by cluster.
+
+* Results: We produced various heatmaps of features like proportion and mean liquidations or borrows, and various density plots of those features to visualize the spread of the cluster. No concrete claims were able to be made - more representative features and generally more data needs to be used.
+
+## General Table of Contents:
+
+* Problem Exploration
+* Implementation & Results
+  * Heatmap Analysis
+  * Density Plot and Histogram Analysis
+* Further Work & Conclusions
+    
+    
+## Problem Exploration
+
+We start by reading in the clusterings that we wrote out to from our UMAP and HDBSCAN from the previous assignment.
+  
+```{r setup, include = FALSE}
+```
+  
+
+```{r}
+df.scaled <- read.csv("users_scaled.csv")
+km_clusters <- read.csv("km_clusters.csv")
+# remove indices generated from writing to csv.
+df.scaled <- df.scaled[, -which(names(df.scaled) %in% c("X"))] 
+km_clusters <- km_clusters[, -which(names(km_clusters) %in% c("X"))] 
+#install.packages("umap")
+#install.packages("dbscan")
+library(umap)
+library(dbscan)
+library(ggplot2)
+library(devtools)
+library(ggbiplot)
+library(gplots)
+library(RColorBrewer)
+library(beeswarm)
+library(tidyverse)
+library(ggbeeswarm)
+library(foreach)
+library(doParallel)
+```
+
+Doing a preliminary heatmap of the original data, it had turned out "timeactive" feature was controlling the clustering entirely. So, we remove the feature and quickly do UMAP + HDBSCAN, this time with stricter hyperparameters on the clustering (require at least 500 points to be a cluster).
+
+```{r}
+df.scaled <- df.scaled[, -which(names(df.scaled) %in% c("timeactive"))] ## remove timeactive case
+set.seed(43)
+users.umap_5 = umap(df.scaled, n_components = 5)
+minimum_points = 500
+set.seed(43)
+users.hdb_5 <- hdbscan(users.umap_5$layout, minPts = minimum_points)
+```
+
+This turns out to produce drastically different results. However, we do have to note that UMAP is an iterative, random algorithm that minimizes a loss, which means our visualizations will vary quite a bit.
+
+```{r}
+df_umap <- data.frame(users.umap_5$layout)
+n_colors = max(users.hdb_5$cluster)
+pre_colors <- rainbow(n_colors)
+palette1 <- c("#808080", pre_colors) ## set 0 to a light grey as outliers
+color_labels <- vector("character", length = length(users.hdb_5$cluster))
+for (i in 0:n_colors) {
+  color_labels[users.hdb_5$cluster == i] = palette1[i+1]
+}
+cluster_names <- c("Outliers", c(1:n_colors))
+
+ggplot(df_umap, aes(x=X1, y=X2)) + geom_point(alpha = 0.1, size = 2, shape = 4, colour = color_labels) + ggtitle("User Data (Transaction Averages) Clustered via HDBSCAN in 5D w/ 500 MinPts") + labs(x = "Standard Basis Vector 1 Domain", y = "Standard Basis Vector 1 Domain") + guides(colour = guide_legend(override.aes = list(alpha = 1))) + scale_color_manual(labels = cluster_names, values = palette1)
+```
+
+Originally, we thought that k-means clustered the data similarly to UMAP + HDBSCAN. However, once we remove the "timeactive" column (which also likely changes the seed of UMAP internally), we see that the k-means clusters only have partially similar clusterings now. 
+
+```{r}
+n_colors_km = max(km_clusters)
+pre_colors_km <- rainbow(n_colors_km)
+palette3 <- c("#808080", pre_colors_km) ## set 0 to a light grey as outliers
+color_labels_km <- vector("character", length = length(km_clusters))
+for (i in 0:n_colors_km) {
+  color_labels_km[km_clusters == i] = palette3[i+1]
+}
+cluster_names_km <- c("Outliers", c(1:n_colors_km))
+
+ggplot(df_umap, aes(x=X1, y=X2)) + geom_point(alpha = 0.1, size = 2, shape = 4, colour = color_labels_km) + ggtitle("User Data (Transaction Averages) Clustered w/ K-Means w/ 500 MinPts") + labs(x = "Standard Basis Vector 1 Domain", y = "Standard Basis Vector 1 Domain") + guides(colour = guide_legend(override.aes = list(alpha = 1))) + scale_color_manual(labels = cluster_names_km, values = palette3)
+```
+
+The problem we wish to dive to into now obviously appears - what do the clusterings mean? UMAP does not have intuitive directions/bases compared to PCA which tries to capture the most variance in the principal components. It'll be necessary to look at the summary statistics, a heatmap of the features, and compare the densities for the features.
+
+## Implementations & Results
+
+
+Here we just have some preliminary aliases/and data organizing.
+```{r}
+#df.4 <- read_csv(file='users_clustered.csv')
+out_labels <- users.hdb_5$cluster
+joined_data <- df.scaled
+joined_data$hdb_clusters <- out_labels
+df.4 <- joined_data
+mx <- max(df.4$hdb_clusters) 
+dict <- table(df.4$hdb_clusters)
+df.dict <- as.data.frame(dict)
+out_labels <- df.4$hdb_clusters
+```
+
+
+We compute the means of the columns (and as a sanity check do it with the original data as well). We also display and color code the 3 most prominent (largest) clusters which we'll be taking a look at in the density/histogram plots.
+
+```{r}
+df <- read.csv("transactions.csv") ## read original transactions CSV
+df.users <-read.csv("df_users.csv") ## read users parsed csv
+df.users <- df.users[, -which(names(df.users) %in% c("X"))] 
+dropped_df_liq <- drop_na(df, amountUSDCollateral) ## dataset with all user transactions with non-NAN liquidations
+dropped_df_borrow <- drop_na(df, amount) ## dataset with non-NAN amounts borrowed
+N = mx
+check_top_n = 3
+liquidations_on <- TRUE
+number_of_dims_scaled <- (df.scaled %>% dim)[2]
+
+hdb_centers <- matrix(0, N, 29) # 29 attributes of the original dataset.
+hdb_centers_2 <- matrix(0, N, number_of_dims_scaled) # ~ 16 attributes of the dataset we ran PCA on.
+topclusters <- top_n(df.dict, n=N, Freq) %>% arrange(desc(Freq)) # get the top n sized clusters and their frequencies in sorted order
+for (i in 1:N) {
+  c_idx <- topclusters[i,1]
+  #if (c_idx == 0) {
+  #  next
+  #  } # skip the outlier case, when the cluster id is 0.
+  c_user_idx <- which(df.4$hdb_clusters == c_idx) # pick out all indexes of users with the specific clustering c_idx
+  c_users_id <-df.users[c(c_user_idx),] # now get the actual users into a df from their indices from above
+  transact_users <- which(dropped_df_liq$user == c_users_id) #get all transactions of the cluster of users
+  transact_users_amount <- which(dropped_df_borrow$user == c_users_id)
+  
+  ## Compute colmeans of all clusters, and insert to a matrix to do a heatmap analysis.
+  clm <- colMeans(c_users_id, na.rm = TRUE)
+  hdb_centers[i, 1:29] <- clm
+  clm2 <- colMeans(df.scaled[c(c_user_idx),])
+  hdb_centers_2[i, 1:number_of_dims_scaled] <- clm2
+  # The following if-statement is to display which clusters are being selected.
+  # Further d
+  if ((i <= check_top_n)) { 
+    sprintf("Cluster Number: %d\nCluster Size %d\n", c_idx, length(c_user_idx)) %>% cat()
+    n_colors = unique(users.hdb_5$cluster)
+    pre_colors <- rainbow(n_colors)
+    palette1 <- c("#808080", pre_colors) ## set 0 to a light grey as outliers
+    color_labels <- vector("character", length = length(users.hdb_5$cluster))
+    for (i in 0:n_colors) { 
+      color_labels[users.hdb_5$cluster == i] <- palette1[i+1]
+    }
+    alpha_vals <- c(rep(0.05,length(color_labels))) ## set custom alpha values
+    alpha_vals[c(which(out_labels == c_idx))] <- 0.1
+    color_vals <- c(rep("#808080",length(color_labels))) ## set custom colors
+    color_vals[c(which(out_labels == c_idx))] <- color_labels[c_idx]
+    zeroed_color_labels = color_vals
+    plot1 <- ggplot(df_umap, aes(x=X1, y=X2))
+    plot1 <- plot1 + geom_point(alpha = alpha_vals, size = 2, shape = 4, colour = zeroed_color_labels) + ggtitle("User Data (Transaction Averages) Clusters Highlighted") + labs(x = "Standard Basis Vector 1 Domain", y = "Standard Basis Vector 1 Domain") + guides(colour = guide_legend(override.aes = list(alpha = 1))) + scale_color_manual(labels = cluster_names, values = palette1)
+      print(plot1)
+  }
+
+  
+}
+
+hdb_centers.df <- as.data.frame(hdb_centers)
+colnames(hdb_centers.df) <- df.users %>% colnames
+hdb_centers_zeroed.df <-hdb_centers.df%>%replace(is.na(.),0)
+
+final_hdb_centers.df <- hdb_centers_zeroed.df[, -which(names(hdb_centers_zeroed.df) %in% c("user", "timefirst", "timelast", "N", "timeactive"))]
+final_hdb_centers.df %>% head
+
+```
+
+There exists NA data as some users don't have averages for some of the transactions.
+
+```{r}
+
+#make heatmap of cluster centers
+heatmap.2(final_hdb_centers.df %>% as.matrix(),
+scale = "column",
+dendrogram = "none",
+Colv=FALSE,
+cexCol=1.0,
+main = "HDBSCAN Cluster Centers",
+trace ="none")
+#clm2 %>% head
+
+```
+
+We just set their values to 0.
+
+```{r}
+
+hdb_centers_2.df <- as.data.frame(hdb_centers_2)
+colnames(hdb_centers_2.df) <- df.scaled %>% colnames
+hdb_centers_zeroed_2.df <-hdb_centers_2.df%>%replace(is.na(.),0)
+final_hdb_centers_2.df <- hdb_centers_zeroed_2.df
+```
+
+We get the following heatmap of our HDBSCAN mean clusters. Certain features definitely have a noticeable range, such as mean deposit. It might interesting to take a look at the density/histogram plots of the averaged values per user and compare the clusters.
+```{r}
+#make heatmap of cluster centers
+heatmap.2(final_hdb_centers_2.df %>% as.matrix(),
+scale = "column",
+dendrogram = "none",
+Colv=FALSE,
+cexCol=1.0,
+main = "HDBSCAN Cluster Centers",
+trace ="none")
+```
+
+We output the histogram style densities of mean deposits, mean redeems, and mean repays. From the plot of mean deposits, we see that the clusters do have different range of values, which may represent different the different type of users. For example, we see that the orange density-histogram mainly has the larger values overall, which we can also see if we display the summary statistics. We also notice a significant chunk of users (cluster) that are centered at 0, likely for the NA values. Similarly, this is observable in mean redeems, and mean repays. So our clustering was able to group users who don't do specific transactions as well. Furthermore, we can also take a look at the proportion of transactions, which we show next.
+
+```{r}
+N_den = 6
+plot_den <- ggplot() + labs(title = "Densities of Mean Deposits for 6 Largest Clusters on Users' Transaction Averages") 
+plot_red <- ggplot() + labs(title = "Densities of Mean Redeems for 6 Largest Clusters on Users' Transaction Averages") 
+plot_repay <- ggplot() + labs(title = "Densities of Mean Repays for 6 Largest Clusters on Users' Transaction Averages") 
+
+for (i in 1:N_den) { ## outliers not included, skip 0
+  c_idx <- topclusters[i,1]
+  c_user_idx <- which(df.4$hdb_clusters == c_idx)
+  c_users_id <- df.users[c(c_user_idx),]
+  c_users_id_replaced <-c_users_id%>%replace(is.na(.),0)
+
+   plot_den <- plot_den + geom_histogram(aes(x=mean_deposit), color = palette1[i+1], data=c_users_id_replaced, bins = 200) 
+   plot_red <- plot_red + geom_histogram(aes(x=mean_redeem), color =  palette1[i+1], data=c_users_id_replaced, bins = 200) 
+   plot_repay <- plot_repay + geom_histogram(aes(x=mean_repay), color =  palette1[i+1], data=c_users_id_replaced, bins = 200) 
+}
+
+print(plot_den + xlab("Log(2) of Mean Deposits (0: NA)"))
+
+print(plot_red + xlab("Log(2) of Mean Redeems (0: NA)"))
+
+print(plot_repay + xlab("Log(2) of Mean Repays (0: NA)"))
+
+```
+The first plot we show is the density of the proportion of liquidations for the 3 largest clusters. We see that 2 of the clusters have similar density plots in terms of liquidations, and the third clustering has users who rarely get liquidated (as we increase the number of clusters we look at, most clusters tend to have mostly no liquidators, and are captured in the plots shown below). In the third plot, we take a look at the proportion of deposits within those top 3 clusters, and notice that one of the clusters has a high proportion of mean deposits (yellow), which we might expect from a clustering of power users who may liquidate a lot. Or, it could be the cluster where we had a minimal number of liquidations, and those users mainly deposit and rarely get liquidated. In red, we see its proportion of transactions have multiple small peaks, which may mean that specific clustering did not particularly look into separating the mean deposits - so other features would likely have to be looked at.
+
+```{r}
+N_den = 3
+plot_liq <- ggplot() + labs(title = "Densities of Proportion of Liquidations for 3 Largest Clusters on Users' Transaction Averages") + xlab("Proportion of Transactions that are Liquidations")
+plot_prop_repay <- ggplot() + labs(title = "Densities of Proportion of Repays for 3 Largest Clusters on Users' Transaction Averages") + xlab("Proportion of Transactions that are Repays")
+plot_prop_dep <- ggplot() + labs(title = "Densities of Proportion of Deposits for 3 Largest Clusters on Users' Transaction Averages") + xlab("Proportion of Transactions that are Deposits")
+
+for (i in 1:N_den) { 
+  c_idx <- topclusters[i,1]
+  if (c_idx == 0) {
+    next
+  }
+  c_user_idx <- which(df.4$hdb_clusters == c_idx)
+  c_users_id <- df.users[c(c_user_idx),]
+  c_users_id_replaced <-c_users_id%>%replace(is.na(.),0)
+  c_users_dropped <- c_users_id %>% drop_na()
+plot_liq <- plot_liq + geom_density(aes(x=prop_liquidation), color =  palette1[i+1], data=c_users_id_replaced) 
+plot_prop_repay <- plot_prop_repay + geom_density(aes(x=prop_repay), color =  palette1[i+1], data=c_users_id_replaced) 
+plot_prop_dep <- plot_prop_dep + geom_density(aes(x=prop_deposit), color =  palette1[i+1], data=c_users_id_replaced) 
+
+}
+
+print(plot_liq)
+print(plot_prop_repay)
+print(plot_prop_dep)
+
+```
+## Further Work & Conclusions:
+
+Despite our attempt to visualize the clusters through how spread out their means are, it's very dependent on our features. A future step we should likely take is think hard about picking good features that provide a good spread between types of users.
+Also, the type of analysis we can do at most speculative - even with the visualizations, it's not always clear how their shown transaction behavior can characterize what kind of user they are, nor do we know the number of "true" clusters, and the properties of them.
+
+
+
+
