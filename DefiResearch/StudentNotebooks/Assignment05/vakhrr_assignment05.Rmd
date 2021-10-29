@@ -1,0 +1,365 @@
+---
+title: "DAR F21 Project Status Notebook: "
+author: "Roman Vakhrushev (vakhrr)"
+date: "10/28/2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DeFi"
+---
+
+## Biweekly Work Summary	
+
+* RCS ID: vakhrr
+* Project Name: Blockchain DeFi
+* These two weeks I was working on analyzing deficient liquidations.
+* First week I started by analyzing the deficient liquidations graphically 
+and making hypotheses
+* Second week I applied logistic regression and some other classification 
+algorithms to see what features are important.
+* Branch: dar-vakhrr, uploaded files: vakhrr_assignment05.{Rmd,html,pdf}
+
+## Personal Contribution	
+
+All contributions were completed by me. 
+
+## Discussion of Primary Findings 	
+
+
+### What did you want to know? 
+
+I wanted to study deficient liquidation (liquidations with collateral<principal)
+in more detail. Additionally, I wanted to see what differences are there between
+regular and deficient liquidations. Lastly, I tried to see what factors might be
+important for deficient liquidations.
+
+### How did you go about finding it? 
+
+I decided to analyze the data on deficient liquidations from various perspectives:
+time, amount of transactions, collateral-principal ratio, etc. I created several
+dataframes, tables, and graphs to show these patterns. Lastly, I built several
+classification models to study the importance of different factors for deficient
+liquidations and to try to predict them. 
+
+### What did you find?
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+# CAUTION: DO NOT interrupt R as it installs packages!!
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+if (!require("gplots")) {
+  install.packages("gplots")
+  library(gplots)
+}
+
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dp)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+if (!require("plotly")) {
+  install.packages("plotly")
+  library(plotly)
+}
+if (!require("ggrepel")) {
+  install.packages("ggrepel")
+  library(ggrepel)
+}
+if (!require("sjmisc")) {
+  install.packages("sjmisc")
+  library(sjmisc)
+}
+if (!require("sjmisc")) {
+  install.packages("sjmisc")
+  library(sjmisc)
+}
+if (!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+
+if (!require("rpart")) {
+  install.packages("rpart")
+  library(rpart)
+}
+
+if (!require("randomForest")) {
+  install.packages("randomForest")
+  library(randomForest)
+}
+
+
+```
+
+```{r}
+#data collection as always
+df<-read_rds('../../Data/transactions.Rds')  
+# Use deplyr to drop NA reserves, add the counts and then kep only the top 20
+reservecoins <- df %>%  drop_na(reserve) %>% 
+count(reserve) %>% 
+arrange(-n) %>% 
+head(20)
+```
+
+```{R}
+#function to mark stable and non-stable coins
+coinType <- function(coin) {
+    #stable_coins <- list("USDC","USDT","DAI","BUSD","SUSD","GUSD","TUSD")
+    if(str_contains(coin,"USD",ignore.case = TRUE))
+    {
+      result = "stable"
+    }
+    else if(str_contains(coin,"DAI",ignore.case = TRUE))
+    {
+      result = "stable"
+    }
+    else
+    {
+      result = "non-stable"
+    }
+    return(result)
+}
+```
+
+Let's start by building a dataframe for deficient liquidations and computing the percentage of deficient liquidations over all liquidations.
+
+```{R}
+#Show transactions, where collateral<principal (exclude WETH and AmmWETH for now). 
+dfst <- df %>% filter(type == "liquidation") %>% filter(collateralReserve != "WETH") %>% filter(principalReserve != "WETH")%>% filter(collateralReserve != "AmmWETH") %>% filter(principalReserve != "AmmWETH") %>% filter(amountUSDCollateral<amountUSDPincipal)
+
+dfst$collateralType <- mapply(coinType, dfst$collateralReserve)
+dfst$principalType <- mapply(coinType, dfst$principalReserve)
+
+dfs <- df %>% filter(type == "liquidation")
+
+#Count total liquidation 
+count(dfst)/count(dfs)
+
+```
+As we can see, there are about 2.3% of deficient liquidations over the whole data set, which is a relatively high number. This even excludes our problematic data on WETH and AmmWETH.
+
+```{R}
+#Show just random 10 of those (exclude some data)
+dfst %>% select(collateralReserve,principalReserve,amountUSDCollateral,amountUSDPincipal) %>% head(10)
+
+#dfst %>% select(collateralReserve,principalReserve,amountUSDCollateral,amountUSDPincipal)[order(-dfst$amountUSDPincipal),]
+
+plot1 <- ggplot(dfst,aes(x = amountUSDPincipal, y = amountUSDCollateral,color = collateralType, shape = principalType)) + geom_point() + ggtitle("Liquidations with Collateral below Principal") + geom_abline() + xlab("Principal (USD)") + ylab("Collateral (USD)")
+
+plot1
+
+dfst2 <- dfst %>% filter(amountUSDPincipal < 250000)
+
+plot2 <- ggplot(dfst2,aes(x = amountUSDPincipal, y = amountUSDCollateral,color = collateralType, shape = principalType)) + geom_point() + ggtitle("Liquidations with Collateral below Principal (no outliers)") + geom_abline() + xlab("Principal (USD)") + ylab("Collateral (USD)")
+
+plot2
+
+```
+We can take a look into how deficient liquidations are distributed. First of all, there are just a few liquidations with very high collateral and principal value. Most of the deficient liquidations are below $100000 in principal. Second, we see that there are no deficient liquidations, where both collateral and principal are stable coins. This is probably just because there are very little (stable,stable) liquidations in general. Lastly, we observe that some complicated distribution in terms of distance from the identity line. There are some deficient liquidations that are extremely close to the identity line, but there are also a lot of deficient liquidations that are quite distant from it.
+```{R}
+#function to mark deficient/regular liquidations
+defLiquid <- function(principal, collateral) {
+  if(collateral < principal)
+  {
+    result = TRUE
+  }
+  else
+  {
+    result = FALSE
+  }
+  return(result)
+}
+
+dfl <- df %>% filter(type == "liquidation") %>% filter(collateralReserve != "WETH") %>% filter(principalReserve != "WETH") %>% filter(collateralReserve != "AmmWETH") %>% filter(principalReserve != "AmmWETH") 
+
+dfl$deficiency <- mapply(defLiquid,dfl$amountUSDPincipal,dfl$amountUSDCollateral)
+
+#plot of regular vs deficient liquidations
+
+plot3 <- ggplot(dfl,aes(x = amountUSDPincipal, y = amountUSDCollateral,color = deficiency)) + geom_point() + ggtitle("Regular vs Deficient Liquidations") + geom_abline() + xlab("Principal (USD)") + ylab("Collateral (USD)")
+
+plot3
+
+#plot of liquidations over time
+
+plot4 <- ggplot(dfl,aes(y = amountUSDPincipal,x = as_datetime(timestamp, tz = "UTC"),color = deficiency)) + geom_point() + ggtitle("Regular vs Deficient Liquidations over Time") + geom_abline() + xlab("Time") + ylab("Principal (USD)")
+
+plot4
+
+```
+We can take a look into deficient vs regular liquidations. Unsurprisingly, we see that deficient liquidations are only represented when the amount of transactions is very small compared to regular liquidations. If we look into liquidations over time, we can observe a few trends. The regular ggplot makes it harder to see (compared to ggplotly), but we can still see that all liquidations both deficient and regular are distributed non-equally (due to spikes). However, we still observe that deficient liquidations occurred in different times from January through July and August. Another interesting observation is that it seems like deficient liquidations often occur in pairs and triples (within the same day or two days), but I do not know if this is really true and how to explain it.
+```{R}
+
+dfl <- dfl %>% filter(deficiency == TRUE) %>% mutate(percent = amountUSDCollateral*100/amountUSDPincipal)
+
+#dfl$percent <- format(dfl$percent,scientific = FALSE)
+
+
+dfl$principalType <- mapply(coinType, dfl$principalReserve)
+dfl$collateralType <- mapply(coinType, dfl$collateralReserve)
+
+#plot this graph, excluding outliers, so it is easier to see
+plot5 <- ggplot(dfl%>%filter(amountUSDPincipal < 250000),aes(x = percent,y = amountUSDPincipal, color = collateralType, shape = principalType)) + geom_point() + ggtitle("Deficient Liquidations by Percent (No Outliers)") + geom_abline() + ylab("Principal (USD)") + xlab("Collateral-Principal Ratio(%)")
+
+plot5
+
+
+```
+In order to study the deficient liquidations in more detail, we can take a look into collateral-principal ratio. Collateral-principal ratio is defined as collateral(USD)/principal(USD). So, this ratio, expressed as percent, is always less than 100% for deficient liquidations. From the plot, we can observe that distribution (in horizontal axis) seems to be more or less uniform, at the very least there is no significant bias towards 100% as I would expect. One interesting detail to observe is that there is a gap in deficient liquidations between about 35% to 43% in collateral-principal ratio. 
+```{R}
+
+#We have to reload data for new analysis
+
+#data collection as always
+#df2<-read_rds('../../DefiResearch/transactions2.Rds')  
+# Use deplyr to drop NA reserves, add the counts and then kep only the top 20
+reservecoins <- df %>%  drop_na(reserve) %>% 
+count(reserve) %>% 
+arrange(-n) %>% 
+head(20)
+
+
+
+```
+
+```{R}
+
+#Let's try logistic regression on data
+
+#dfl <- df %>% filter(type == "liquidation")
+
+dfll <- df %>% filter(type == "liquidation") %>% filter(collateralReserve != "WETH") %>% filter(principalReserve != "WETH") %>% filter(collateralReserve != "AmmWETH") %>% filter(principalReserve != "AmmWETH") %>% mutate(percent = amountUSDCollateral/amountUSDPincipal)
+
+dfll$deficiency <- mapply(defLiquid,dfll$amountUSDPincipal,dfll$amountUSDCollateral)
+dfll$principalType <- mapply(coinType, dfll$principalReserve)
+dfll$collateralType <- mapply(coinType, dfll$collateralReserve)
+
+dfll<-dfll %>% mutate(defNum = ifelse(deficiency == TRUE, 1, 0) )
+dfll<-dfll %>% mutate(princTypeNum = ifelse(principalType == "stable", 1, 0) )
+dfll<-dfll %>% mutate(collatTypeNum = ifelse(collateralType == "stable", 1, 0) )
+
+
+
+model <- glm(defNum ~ timestamp + collateralAmount + principalAmount + reservePriceETHPrincipal + reservePriceETHCollateral, data = dfll, family = binomial, maxit = 100)
+
+summary(model)
+
+
+
+
+dfll<- dfll %>% mutate(priceRatio =  reservePriceETHCollateral/reservePriceETHPrincipal, amountRatio = collateralAmount/principalAmount)
+
+model1 <- glm(defNum ~ priceRatio, data = dfll, family = binomial, maxit = 100)
+
+summary(model1)
+
+#model2 <- glm(defNum ~ priceRatio, data = dfll, family = binomial, maxit = 100)
+
+model2 <- glm(defNum ~ collateralAmount + principalAmount + reservePriceETHPrincipal + reservePriceETHCollateral + princTypeNum + collatTypeNum, data = dfll, family = binomial, maxit = 100)
+
+summary(model2)
+
+model3 <- glm(defNum ~ timestamp + priceRatio + collateralAmount + principalAmount + reservePriceETHPrincipal  + princTypeNum + collatTypeNum, data = dfll, family = binomial, maxit = 100)
+
+summary(model3)
+
+
+```
+We can take a look into what factors are important for deficient liquidations. We can verify it by looking into different models using logistic regression. We additionally introduce new feature - price ratio (ratio of prices of principal and collateral coins). The results of trying different models (different features), but we probably want to look into the last model that includes most features. We obviously want to exclude percent (collateral-principal ratio) from the analysis, as it would reveal the way deficient liquidations are defined. As we can see, logistic regression proves the importance of time (which we already observed above) and price ratio (price ratio has extremely good p-value), we also see that principal and collateral type both have some statistical significance. Other factors seem to have little to no influence on the results.
+
+```{R}
+
+set.seed(2)
+
+#data separation, done from r
+ind <- sample(c(rep(TRUE,ceiling(nrow(dfll)*0.8)),rep(FALSE,floor(nrow(dfll)*0.2))))
+data1 <- dfll[ind, ] 
+data2 <- dfll[!ind, ] 
+
+model4 <- glm(defNum ~ timestamp + priceRatio + collateralAmount + principalAmount + reservePriceETHPrincipal  + princTypeNum + collatTypeNum, data = data1, family = binomial, maxit = 100)
+
+model4b <- rpart(defNum ~ timestamp + priceRatio + collateralAmount + principalAmount + reservePriceETHPrincipal  + princTypeNum + collatTypeNum, data = data1)
+
+model4c <- randomForest(defNum ~ timestamp + priceRatio + collateralAmount + principalAmount + reservePriceETHPrincipal  + princTypeNum + collatTypeNum, data = data1)
+
+summary(model4)
+#summary(model4b)
+summary(model4c)
+
+#summary(model4b)
+
+result <- predict(model4,data2,type = "response")
+
+#resultb <- predict(model4b,data2)
+
+print(head(result,10))
+
+data2<- data2 %>% mutate(predictedValue = predict(model4,data2,type = "response"))
+
+data2<- data2 %>% mutate(predictedResult = ifelse(predictedValue>0.5,TRUE,FALSE))
+
+data2<- data2 %>% mutate(predictedValue2 = predict(model4b,data2))
+
+data2<- data2 %>% mutate(predictedResult2 = ifelse(predictedValue2>0.5,TRUE,FALSE))
+
+data2<- data2 %>% mutate(predictedValue3 = predict(model4b,data2))
+
+data2<- data2 %>% mutate(predictedResult3 = ifelse(predictedValue3>0.5,TRUE,FALSE))
+
+head(data2 %>% select(deficiency, predictedValue, predictedResult, predictedValue2, predictedResult2, predictedValue3,predictedResult3),10)
+
+
+#Logistic Regression Accuracy
+count(data2 %>% filter(predictedResult == deficiency))/count(data2)
+
+#Regression Tree Accuracy
+count(data2 %>% filter(predictedResult2 == deficiency))/count(data2)
+
+#Random Forest Accuracy
+count(data2 %>% filter(predictedResult3 == deficiency))/count(data2)
+
+
+
+
+```
+
+In order to measure accuracy of the logistic regression model, we can try how well it predicts the data using those features. We introduce two more algorithms for classification: regression trees and random forest. We built all three models using the same features (as above). Additionally we separate data into testing and training sets. The resulting models and accuracy of each algorithm can be observed above (summary for regression trees is commented out as it is very lengthy). Due to very unbalanced nature of our data (98% vs 2%), logistic regression marks all liquidations as False, which still gives it high accuracy. The other two algorithms seem to both perform slightly better and they not always mark data points as False. In general, it is probably not the best idea to train classification models on such an unbalanced datasets -- a good idea would be to balance data, but, unfortunately, we only have about 150 deficient observations, which is really small. 
