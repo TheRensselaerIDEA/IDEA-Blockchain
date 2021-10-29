@@ -1,0 +1,436 @@
+---
+title: "DeFi Example Notebook: AAVE Users"
+subtitle: "AAVE Users Analysis"
+author: "Data Analytics Research Instructors"
+date: "08/27/2021"
+output:
+  pdf_document: default
+  html_document:
+    toc: true
+    number_sections: true
+    df_print: paged
+---
+
+```{r}
+#import libraries
+if (!require("ggplot2")) {
+   install.packages("ggplot2")
+   library(ggplot2)
+}
+if (!require("knitr")) {
+   install.packages("knitr")
+   library(knitr)
+}
+library(ggbiplot)
+library(gplots)
+library(RColorBrewer)
+library(beeswarm)
+library(tidyverse)
+library(tidyquant) 
+library(ggbeeswarm)
+library(foreach)
+library(doParallel)
+library(Rtsne)
+library(anytime)
+```
+We begin by loading the csv file in to a dataframe.
+```{r}
+#load in csv file to data frame
+df<-read_rds("~/transactionsv2.rds")
+head(df)
+```
+We reformat the dataframe so that each row represents a user, and the columns represent a summarization of the user's transaction history. 
+```{r}
+#group by user and get time of user's first and last transaction, as well as number of transactions
+df.users<- df%>%group_by(user, user_alias)%>%
+  summarise(timefirst=min(anydate(timestamp)), timelast=max(anydate(timestamp)), N=n())
+#get the time the user has been active
+df.users$timeactive<-df.users$timelast-df.users$timefirst
+#get amounts for columns
+df$logUSD<-log10(df$amountUSD)
+df$logCollateralUSD<-log10(df$amountUSDCollateral)
+#get user's transaction information
+for(Type in unique(df$type)){
+  #filter for only transactions of certain type
+  df.type <-filter(df%>%group_by(user)%>%
+                     count(type),type==Type)
+  
+  #add means of each transaction type
+  if(Type!="liquidation" || Type!="swap"){
+    df.sum<-filter(df,type==Type)%>%
+      group_by(user)%>%
+      summarise(Sum=sum(logUSD))
+    colnames(df.sum)[2]<-paste('total_',Type,sep='')
+    df.users<-merge(x=df.users,y=df.sum,by="user",all.x=TRUE)
+  } 
+  
+  #add counts of transaction types to df
+  ntypes<-paste("n",Type,sep='')
+  colnames(df.type)[3]<-ntypes
+  df.users<-merge(x=df.users,y=select(df.type,user,ntypes),by="user",all.x=TRUE)
+  
+  #get proportion of transaction types and weekly number of transaction type
+  df.users[paste("prop_",Type,sep='')]<-(df.users[ntypes]+.05)/((df.users$N)+.3)
+}
+head(df.users)
+```
+```{r}
+nrow(df.users)
+length(unique(df.users$user))
+```
+
+
+As long as those two numbers are the same, we are good to proceed. Next, we select only the columns we wish to cluster on.
+```{r}
+#subset only columns we wish to scale by removing columns that we will not cluster on
+df.sub<-select(df.users,-c(user,timefirst,timelast,nborrow,nrepay,nswap,nliquidation,nredeem,ndeposit, total_swap, nswap, total_collateral, total_liquidation, ncollateral, user_alias))
+#repalce missing values as 0's
+df.sub<-df.sub%>%replace(is.na(.),0)
+```
+We scale the data to prepare for PCA.
+```{r}
+#scale data
+df.scaled<-df.sub%>%mutate_all(scale)
+
+summary(df.scaled)
+```
+Now, we perform PCA on the scaled data. 
+```{r}
+df.scaled <- df.scaled[-c(41100, 44263, 44658, 14211, 20033, 6638),]
+df.users <- df.users[-c(41100, 44263, 44658, 14211, 20033, 6638),]
+
+#perform pca on data
+my.pca<-prcomp(df.scaled,retx=TRUE,center=FALSE,scale=FALSE) # Run PCA and save to my.pca
+#make scree plot
+plot(my.pca, type="line")
+#summary of pca
+summary(my.pca)
+ncomps=5
+```
+
+Finally, we run the kmeans clustering algorithm on the data. We select the number of clusters equal to the number of selected components. 
+```{r}
+#run kmeans algorithm
+set.seed(1)
+km <-kmeans(df.scaled,4)
+#plot frequencies of each cluster
+barplot(table(km$cluster),main="Kmeans Cluster Size")
+km$size
+```
+Finally, we view the centers of the kmeans clusters.
+```{r}
+#make heatmap of cluster centers
+heatmap.2(km$centers,
+scale = "col",
+dendrogram = "row",
+Colv=FALSE,
+cexCol=1.0,
+main = "Kmeans Cluster Centers",
+trace ="none")
+```
+# Exploring the Influential Factors with a Biplot 
+```{r}
+plot1<-ggbiplot(my.pca,choices=c(1,2),
+  labels=rownames(df.scaled), #show point labels
+  var.axes=TRUE, # Display axes
+  ellipse = FALSE, # Don't display ellipse
+  obs.scale=1,
+  groups=as.factor(km$cluster)) +
+  ggtitle("User Data Projected on PC1 and PC2 ")
+plot1
+```
+
+
+```{r}
+df["date"] = anydate(df$timestamp)
+min(df$date)
+max(df$date)
+num_days <- max(df$date) - min(df$date)
+num_days
+```
+
+```{r}
+ggplot(data = df, aes(x = date,  group = type, color = type)) + 
+  geom_density()+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.5)+
+  ggtitle("Transaction Types Over Time")
+```
+
+
+
+
+
+```{r}
+df.clusters <- data.frame(user = df.users$user, cluster = km$cluster)
+df <- left_join(df, df.clusters, by = "user")
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+# 6-list of ggplot colors explicitly specified
+pgg <- gg_color_hue(6)
+```
+
+```{r}
+cluster_names <- c('1' = "Cluster 1", '2' = "Cluster 2", '3' = "Cluster 3", '4' = "Cluster 4")
+ggplot(data = df[!(is.na(df$cluster)) & (df$type != "collateral"), ], aes(x = date,  group = type, color = type)) + 
+  geom_density()+
+  ggtitle("Transaction Types Over Time by User Cluster")+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.5, color = "black")+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  scale_color_manual("type", values = c("deposit"="green","borrow" = pgg[4], "redeem" = "yellow", "liquidation" = "red","repay"=pgg[6],"swap"=pgg[5]))+
+  scale_fill_manual("type", values = c("deposit"="green","borrow" = pgg[4], "redeem" = "yellow", "liquidation" = "red","repay"=pgg[6],"swap"=pgg[5]))+
+  facet_wrap(~ cluster, labeller = as_labeller(cluster_names))
+  
+```
+
+```{r}
+df <- filter(df, cluster != "NA")
+ggplot(df, aes(x = date)) + 
+  geom_histogram(binwidth = 7, color = "black", fill = "white")+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.8, color = "red")+
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%y")+
+  ggtitle("Total Number of Transactions per Week")
+```
+
+```{r}
+ggplot(filter(df, type == "liquidation"), aes(x = date)) + 
+  geom_histogram(binwidth = 1, color = "black", fill = "white")+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.8, color = "red")+
+    scale_x_date(date_breaks = "1 month", date_labels = "%b-%y")+
+  ggtitle("Total Number of Liquidations per Day")
+```
+
+```{r}
+ggplot(df, aes(x = date)) + 
+  geom_histogram(binwidth = 1, color = "black", fill = "white")+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.8, color = "red")+
+  ggtitle("Total Number of Transactions per Day")+
+  facet_wrap(~ type)
+```
+
+```{r}
+ggplot(filter(df, type == "swap"), aes(x = date)) + 
+  geom_histogram(binwidth = 1, color = "black", fill = "white")+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.8, color = "red")+
+  ggtitle("Total Number of Swaps per Day")
+```
+
+```{r}
+if (!require("plotly")) {
+   install.packages("plotly")
+   library(plotly)
+}
+```
+
+```{r}
+
+p <- ggplot(filter(df, type == "deposit"), aes(x = date, 
+                                            text = paste('<Br>Date: ', as.Date(date)))) + 
+  geom_histogram(binwidth = 1, color = "black", fill = "white")+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.8, color = "red")+
+  ggtitle("Total Number of Deposits per Day") 
+ggplotly(p, tooltip = c("y", "text")) 
+```
+
+
+
+```{r}
+p <- ggplot(filter(df, type == "deposit"), aes(x = date,
+                                            text = paste('<Br>Date: ', as.Date(date)))) + 
+  geom_histogram(binwidth = 7, color = "black", fill = "white")+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.8, color = "red")+
+  ggtitle("Total Number of Deposits per Week")+
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%y")
+ggplotly(p, tooltip = c("y", "text")) 
+```
+
+```{r}
+ggplot(data = filter(df, type == "deposit"), aes(x = date, y = amountUSD, fill = as.factor(cluster)))+
+  geom_col()+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.8, color = "red")+
+  ggtitle("Amount of Money (USD) Deposited per Day")+
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%y")
+
+```
+
+```{r}
+ggplot(filter(df, type == "deposit"), aes(x = date)) + 
+  geom_histogram(binwidth = 7, color = "black", fill = "white")+
+  stat_bin(binwidth=7, geom='text', color='black', aes(label=..count..),
+           position=position_stack(vjust = 1.035))+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.8, color = "red")+
+  ggtitle("Total Number of Deposits per Week")+
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%y")
+
+
+
+```
+
+```{r}
+threshold <- 50
+user_freq <- df %>% 
+  count(onBehalfOf_alias)
+user_freq <- filter(user_freq, n >= threshold)
+top_users <- user_freq$onBehalfOf_alias
+```
+
+```{r}
+example_user <- sample(top_users, 1)
+user_transactions <- filter(df, onBehalfOf_alias == example_user)
+ggplot(user_transactions, aes(x = date)) + 
+  geom_histogram(binwidth = 1, color = "black", fill = "white")+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.8, color = "red")+
+  ggtitle(example_user, "Total Number of Transactions per Day")+
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%y")+
+  facet_wrap(~ type)
+```
+
+```{r}
+first <- min(as.Date(user_transactions$date))
+recent <- max(user_transactions$date)
+num <- nrow(user_transactions)
+most_active <- names(sort(-table(user_transactions$date)))[1]
+cat(paste(example_user))
+cat(paste("\nFirst Transaction: ", first))
+cat(paste("\nMost Recent Transaction: ", recent))
+cat(paste("\nNumber of Transactions: ", num))
+cat(paste("\nMost Active Day: ", most_active))
+types_counts <- user_transactions %>%
+  count(type) %>%
+  mutate(n / (as.numeric(recent - first)/7))
+types_counts <- rename(types_counts, "Total" = "n")
+types_counts <- rename(types_counts, "Weekly Average" = "n/(as.numeric(recent - first)/7)")
+kable(types_counts)
+```
+
+```{r}
+df.weekly<- df%>%group_by(user, user_alias)%>%
+  summarise(timefirst=min(anydate(timestamp)), timelast=max(anydate(timestamp)), N=n())
+#get the time the user has been active
+df.weekly$timeactive<-df.weekly$timelast-df.weekly$timefirst
+#get amounts for columns
+df$logUSD<-log10(df$amountUSD)
+df$logCollateralUSD<-log10(df$amountUSDCollateral)
+#get user's transaction information
+for(Type in unique(df$type)){
+  #filter for only transactions of certain type
+  df.type <-filter(df%>%group_by(user)%>%
+                     count(type),type==Type)
+  
+  #add means of each transaction type
+  if(Type!="liquidation" || Type!="swap"){
+    df.sum<-filter(df,type==Type)%>%
+      group_by(user)%>%
+      summarise(Sum=sum(logUSD))
+    colnames(df.sum)[2]<-paste('total_',Type,sep='')
+    df.weekly<-merge(x=df.weekly,y=df.sum,by="user",all.x=TRUE)
+  } 
+  
+  #add counts of transaction types to df
+  ntypes<-paste("n",Type,sep='')
+  colnames(df.type)[3]<-ntypes
+  df.weekly<-merge(x=df.weekly,y=select(df.type,user,ntypes),by="user",all.x=TRUE)
+}
+df.weekly <- rename(df.weekly, "name" = "user_alias")
+
+head(df.weekly)
+df.weekly$timeactive =as.numeric( df.weekly$timeactive / 7)
+df.weekly <- rename(df.weekly, "weeks" = "timeactive")
+
+```
+
+
+
+```{r}
+one_day <- df.weekly %>%
+  filter(weeks == 0)
+df.weekly <- df.weekly %>%
+  filter(weeks > 0)
+df.weekly$N =df.weekly$N / df.weekly$weeks
+df.weekly[,7:20] <- df.weekly[,7:20] / df.weekly$weeks
+one_day$N <- one_day$N * 7
+one_day[,7:20] <- one_day[,7:20] * 7
+df.weekly <- rbind(df.weekly, one_day)
+df.weekly <- rename(df.weekly, "weekly_n" = "N")
+head(df.weekly)
+liquids <- df.weekly %>%
+  filter(nliquidation > 0)
+```
+
+```{r}
+df.sub<-select(df.weekly,-c(user,name, total_liquidation, total_swap, total_collateral))
+#repalce missing values as 0's
+df.sub[is.na(df.sub)] <- 0
+#scale data
+df.scaled<-df.sub%>%mutate_all(scale)
+
+summary(df.scaled)
+```
+Now, we perform PCA on the scaled data. 
+```{r}
+#perform pca on data
+my.pca<-prcomp(df.scaled,retx=TRUE,center=FALSE,scale=FALSE) # Run PCA and save to my.pca
+#make scree plot
+plot(my.pca, type="line")
+#summary of pca
+summary(my.pca)
+ncomps=5
+```
+
+
+```{r}
+#run kmeans algorithm
+set.seed(1)
+km <-kmeans(df.scaled,7)
+#plot frequencies of each cluster
+barplot(table(km$cluster),main="Kmeans Cluster Size")
+km$size
+```
+Finally, we view the centers of the kmeans clusters.
+```{r}
+#make heatmap of cluster centers
+heatmap.2(km$centers,
+scale = "col",
+dendrogram = "row",
+Colv=FALSE,
+cexCol=1.0,
+main = "Kmeans Cluster Centers",
+trace ="none")
+```
+# Exploring the Influential Factors with a Biplot 
+```{r}
+plot1<-ggbiplot(my.pca,choices=c(1,2),
+  #labels=rownames(df.scaled), #show point labels
+  var.axes=TRUE, # Display axes
+  ellipse = FALSE, # Don't display ellipse
+  obs.scale=1,
+  groups=as.factor(km$cluster)) +
+  ggtitle("User Data Projected on PC1 and PC2 ")
+plot1
+```
+
+
+
+```{r}
+ggplot(df.weekly %>% filter(weekly_n <= 100), aes(x = weekly_n))+
+  geom_histogram(binwidth = 5, color = "black", fill = "white", aes(y = ..count../sum(..count..)))+
+  ggtitle("Number of Transactions per Week for Users with less than 100")+
+  scale_y_continuous(labels=percent)+
+  labs(y = "Percent of Users", x = "Number of Transactions")
+```
+
+```{r}
+df.clusters <- data.frame(cluster = km$cluster, name = df.weekly$name)
+df.clusters <- left_join(df.weekly, df.clusters, by = "name")
+```
+
+```{r}
+mean(df.weekly$weekly_n)
+for (x in 1:7){
+  cluster_x <- df.clusters %>%
+    filter(cluster == x)
+  print(paste("Cluster",x, ":",  round(mean(cluster_x$weekly_n), 2)))
+}
+```
+
