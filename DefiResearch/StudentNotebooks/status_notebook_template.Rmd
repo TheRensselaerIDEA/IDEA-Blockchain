@@ -36,7 +36,6 @@ subtitle: "DAR Project Name (Eat4Genes or DeFi)"
 See the Grading Rubric for guidance on how the contents of this notebook will be graded on lms. 
 
 
-
 ### Guide to linking to Shiny Apps
 
 * On the cluster, create a sub-directory called `ShinyApps` in your home directory
@@ -69,6 +68,11 @@ See the Grading Rubric for guidance on how the contents of this notebook will be
 * Summary of work since last week 
 
     * Describe the important aspects of what you worked on and accomplished
+
+* NEW: Summary of github issues added and worked 
+
+    * Issues that you've submitted
+    * Issues that you've self-assigned and addressed
     
 * Summary of github commits 
 
@@ -87,6 +91,7 @@ See the Grading Rubric for guidance on how the contents of this notebook will be
 ## Personal Contribution	
 
 * Clearly defined, unique contribution(s) done by you: code, ideas, writing...
+* Include github issues you've addressed
 
 ## Discussion of Primary Findings 	
 
