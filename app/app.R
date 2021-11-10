@@ -79,11 +79,19 @@ if(!require("ggfortify")){
     install.packages("ggfortify")
     library(ggfortify)
 }
+if(!require("dygraphs")){
+    install.packages("dygraphs")
+    library(dygraphs)
+}
 
 # Prepare Transaction Data
 
 #load Rds (binary version of csv file) into dataframe
 transactions <- read_rds('Data/transactionsv2.rds')
+
+transactions <- transactions %>%
+    mutate(datetime = as_datetime(timestamp)) %>%
+    mutate(amountETH = amount*reservePriceETH)
 
 reserveTypes <- transactions %>%
     distinct(reserve) %>%
@@ -107,74 +115,115 @@ maxDate <- transactions %>%
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(
-
-    # Application title
-    titlePanel("AAVE Transactions Data Visualizer"),
-
-    # Sidebar with a slider input for number of bins 
-    sidebarLayout(
-        sidebarPanel(
-            dateRangeInput("dateRange",
-                           "Filter by date range:",
-                           start = floor_date(minDate$time, unit = "day"),
-                           end = ceiling_date(maxDate$time, unit = "day")),
-            radioButtons("bins",
-                         "Group By:",
-                         choices = c("hour", "day", "week", "month", "quarter"),
-                         selected = "week"),
-            selectInput("reserve",
-                      "Reserve Name:",
-                      choices = reserveTypes$reserve,
-                      multiple = TRUE),
-            #radioButtons("reserveGroups",
-             #            "Reserve Grouping:",
-              #           choices = c("Separate", "Grouped"),
-               #          selected = "Grouped"),
-            selectInput("transactionType",
-                        "Transaction Type(s):",
-                        choices = transactionTypes$type,
-                        multiple = TRUE),
-            radioButtons("transactionGroups",
-                         "Transaction Grouping:",
-                         choices = c("Separate", "Grouped"),
-                         selected = "Grouped")
-            
-        ),
-
+    tabsetPanel(
         
-        mainPanel(
-           plotOutput("reservePlot")
-        )
-    )
-)
+        tabPanel("Transactions",
+            # Application title
+            titlePanel("AAVE Transactions Data Visualizer"),
+        
+            # Sidebar with a slider input for number of bins 
+            sidebarLayout(
+                sidebarPanel(
+                    dateRangeInput("dateRange",
+                                   "Filter by date range:",
+                                   start = floor_date(minDate$time, unit = "day"),
+                                   end = ceiling_date(maxDate$time, unit = "day")),
+                    radioButtons("bins",
+                                 "Group By:",
+                                 choices = c("day", "week", "month", "quarter"),
+                                 selected = "week",
+                                 inline=TRUE),
+                    selectInput("reserve",
+                              "Reserve Name:",
+                              choices = reserveTypes$reserve,
+                              multiple = TRUE),
+                    radioButtons("reserveGroups",
+                                 "Reserve Grouping:",
+                                 choices = c("Separate", "Grouped"),
+                                 selected = "Grouped",
+                                 inline = TRUE),
+                    selectInput("transactionType",
+                                "Transaction Type(s):",
+                                choices = transactionTypes$type,
+                                multiple = TRUE),
+                    radioButtons("transactionGroups",
+                                 "Transaction Grouping:",
+                                 choices = c("Separate", "Grouped"),
+                                 selected = "Grouped",
+                                 inline = "TRUE"),
+                    radioButtons("scaleBy",
+                                 "Scale By: ",
+                                 choices = c("Transaction Count", "Cumulative Transaction Value (USD)", "Cumulative Transaction Value (ETH)"),
+                                 selected = "Transaction Count")
+                    
+                ),
+        
+                
+                mainPanel(
+                   plotOutput("reservePlot")
+                )
+            ) # end of sidebarLayout
+        ), # end of tabPanel
+        tabPanel("New Tab",
+                 # Add your tab here
+                 )
+    ) # end of tabsetPanel
+) # end of fluid_page
 
 # Define server logic required to draw a histogram
 server <- function(input, output) {
     
     output$reservePlot <- renderPlot({
+        # Set up the x-axis bounds based on the time range and time intervals
+        # selected by the user, and filter the transactions by these dates.
         timeInterval <- interval(input$dateRange[1], input$dateRange[2])
-        
-        ifelse(length(input$reserve) == 0, filteredReserves <- reserveTypes$reserve, filteredReserves <- input$reserve)
-        
-        ifelse(length(input$transactionType) == 0, filteredTransactionTypes <- transactionTypes$type, filteredTransactionTypes <- input$transactionType)
-        
-        filteredTransactions <- transactions %>%
-            filter(reserve %in% filteredReserves) %>%
-            filter(type %in% filteredTransactionTypes) %>%
-            mutate(datetime = as_datetime(timestamp)) %>%
+        dateFilteredTransactions <- transactions %>%
             filter(datetime %within% timeInterval) %>%
-            mutate(time = round_date(datetime, unit = input$bins)) %>%
-            group_by(reserve,time) %>%
-            count(type)
+            mutate(roundedTime = round_date(datetime, unit=input$bins))
+        
+        # Filter the transactions by the selected reserve types. If no reserve types are selected, 
+        # select all reserves.
+        ifelse(length(input$reserve) == 0, filteredReserves <- reserveTypes$reserve, filteredReserves <- input$reserve)
+        reserveFilteredTransactions <- dateFilteredTransactions %>%
+            filter(reserve %in% filteredReserves)
+        
+        # Filter the transactions by the selected transaction types. If no types
+        # are selected, select all transaction types.
+        ifelse(length(input$transactionType) == 0, filteredTransactionTypes <- transactionTypes$type, filteredTransactionTypes <- input$transactionType)
+        typeFilteredTransactions <- reserveFilteredTransactions %>%
+            filter(type %in% filteredTransactionTypes)
+        
+        
+        # Setup the yScale column according to the chosen scale, and set up the
+        # proper prefix for the y-axis label
+        if(input$scaleBy == "Transaction Count"){
+            filteredTransactions <- typeFilteredTransactions %>%
+                group_by(reserve, roundedTime) %>%
+                count(type) %>%
+                mutate(yScale = n)
+            yLabPrefix <- "Number of "
+        }else if(input$scaleBy == "Cumulative Transaction Value (USD)"){
+            filteredTransactions <- typeFilteredTransactions %>%
+                group_by(reserve, roundedTime) %>%
+                mutate(yScale = cumsum(amountUSD))
+            yLabPrefix <- "USD Value of "
+        }else if(input$scaleBy == "Cumulative Transaction Value (ETH)"){
+            filteredTransactions <- typeFilteredTransactions %>%
+                group_by(reserve, roundedTime) %>%
+                mutate(yScale = cumsum(amountETH))
+            yLabPrefix <- "ETH Value of "
+        }
+        
         
         ifelse(length(filteredReserves) > 3, reserveString <- "Selected Reserves ", reserveString <- paste(filteredReserves, collapse=', '))
         ifelse(length(filteredTransactionTypes) > 3, typeString <- "Transactions ", typeString <- str_c(paste(filteredTransactionTypes, collapse='s, '), "s ", sep=''))
+        ifelse(input$reserveGroups=="Separate", plotAES <- aes(filteredTransactions$roundedTime, filteredTransactions$yScale, fill=filteredTransactions$reserve),
+               plotAES <- aes(filteredTransactions$roundedTime, filteredTransactions$yScale))
+        title <- str_c(yLabPrefix, typeString, "for ", reserveString, sep='')
         
-        title <- str_c("Number of ", typeString, "for ", reserveString, sep='')
-        
-        plot <- ggplot(filteredTransactions, aes(time, n, fill=reserve)) + geom_col() +
+        plot <- ggplot(filteredTransactions, plotAES) + geom_col() +
             xlab(str_to_title(input$bins)) +
-            ylab(str_c("Number of ", typeString, sep=""))+
+            ylab(str_c(yLabPrefix, typeString, sep=""))+
             ggtitle(title)
         
         if(input$transactionGroups=="Separate") plot <- plot + facet_wrap(~ filteredTransactions$type)
