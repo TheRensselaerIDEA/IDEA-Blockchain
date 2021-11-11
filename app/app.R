@@ -15,26 +15,20 @@ r["CRAN"] <- "http://cran.r-project.org"
 options(repos=r)
 })
 
-# Set code chunk defaults
-knitr::opts_chunk$set(echo = TRUE)
-
 # Load required packages; install if necessary
 # CAUTION: DO NOT interrupt R as it installs packages!!
 if (!require("ggplot2")) {
     install.packages("ggplot2")
     library(ggplot2)
 }
-
 if (!require("knitr")) {
     install.packages("knitr")
     library(knitr)
 }
-
 if (!require("dplyr")) {
     install.packages("dplyr")
     library(dp)
 }
-
 if (!require("RColorBrewer")) {
     install.packages("RColorBrewer")
     library(RColorBrewer)
@@ -42,10 +36,6 @@ if (!require("RColorBrewer")) {
 if (!require("beeswarm")) {
     install.packages("beeswarm")
     library(beeswarm)
-}
-if (!require("tidyverse")) {
-    install.packages("tidyverse")
-    library(tidyverse)
 }
 if (!require("ggbeeswarm")) {
     install.packages("ggbeeswarm")
@@ -67,10 +57,6 @@ if(!require("survival")) {
     install.packages("survival")
     library(survival)
 }
-if(!require("survminer")) {
-    install.packages('survminer')
-    library(survminer)
-}
 if(!require("ranger")){
     install.packages("ranger")
     library(ranger)
@@ -82,6 +68,10 @@ if(!require("ggfortify")){
 if(!require("dygraphs")){
     install.packages("dygraphs")
     library(dygraphs)
+}
+if (!require("tidyverse")) {
+    install.packages("tidyverse")
+    library(tidyverse)
 }
 
 # Prepare Transaction Data
@@ -113,60 +103,90 @@ maxDate <- transactions %>%
     select(timestamp) %>%
     transmute(time = as_datetime(timestamp))
 
+# load interest rates data in dataframe
+rates <- read_csv('Data/rates.csv')
+
+# create column in rates with date
+rates <- rates[order(rates$timestamp),]
+rates$date <- as.Date(as.POSIXct(rates$timestamp, origin = "1970-01-01"))
+
 # Define UI for application that draws a histogram
 ui <- fluidPage(
     tabsetPanel(
         
         tabPanel("Transactions",
-            # Application title
-            titlePanel("AAVE Transactions Data Visualizer"),
-        
-            # Sidebar with a slider input for number of bins 
-            sidebarLayout(
-                sidebarPanel(
-                    dateRangeInput("dateRange",
-                                   "Filter by date range:",
-                                   start = floor_date(minDate$time, unit = "day"),
-                                   end = ceiling_date(maxDate$time, unit = "day")),
-                    radioButtons("bins",
-                                 "Group By:",
-                                 choices = c("day", "week", "month", "quarter"),
-                                 selected = "week",
-                                 inline=TRUE),
-                    selectInput("reserve",
-                              "Reserve Name:",
-                              choices = reserveTypes$reserve,
-                              multiple = TRUE),
-                    radioButtons("reserveGroups",
-                                 "Reserve Grouping:",
-                                 choices = c("Separate", "Grouped"),
-                                 selected = "Grouped",
-                                 inline = TRUE),
-                    selectInput("transactionType",
-                                "Transaction Type(s):",
-                                choices = transactionTypes$type,
-                                multiple = TRUE),
-                    radioButtons("transactionGroups",
-                                 "Transaction Grouping:",
-                                 choices = c("Separate", "Grouped"),
-                                 selected = "Grouped",
-                                 inline = "TRUE"),
-                    radioButtons("scaleBy",
-                                 "Scale By: ",
-                                 choices = c("Transaction Count", "Cumulative Transaction Value (USD)", "Cumulative Transaction Value (ETH)"),
-                                 selected = "Transaction Count")
-                    
-                ),
-        
-                
-                mainPanel(
-                   plotOutput("reservePlot")
-                )
-            ) # end of sidebarLayout
+                 # Application title
+                 titlePanel("AAVE Transactions Data Visualizer"),
+                 
+                 # Sidebar with a slider input for number of bins 
+                 sidebarLayout(
+                     sidebarPanel(
+                         dateRangeInput("dateRange",
+                                        "Filter by date range:",
+                                        start = floor_date(minDate$time, unit = "day"),
+                                        end = ceiling_date(maxDate$time, unit = "day")),
+                         radioButtons("bins",
+                                      "Group By:",
+                                      choices = c("day", "week", "month", "quarter"),
+                                      selected = "week",
+                                      inline=TRUE),
+                         selectInput("reserve",
+                                     "Reserve Name:",
+                                     choices = reserveTypes$reserve,
+                                     multiple = TRUE),
+                         radioButtons("reserveGroups",
+                                      "Reserve Grouping:",
+                                      choices = c("Separate", "Grouped"),
+                                      selected = "Grouped",
+                                      inline = TRUE),
+                         selectInput("transactionType",
+                                     "Transaction Type(s):",
+                                     choices = transactionTypes$type,
+                                     multiple = TRUE),
+                         radioButtons("transactionGroups",
+                                      "Transaction Grouping:",
+                                      choices = c("Separate", "Grouped"),
+                                      selected = "Grouped",
+                                      inline = "TRUE"),
+                         radioButtons("scaleBy",
+                                      "Scale By: ",
+                                      choices = c("Transaction Count", "Cumulative Transaction Value (USD)", "Cumulative Transaction Value (ETH)"),
+                                      selected = "Transaction Count")
+                         
+                     ),
+                     
+                     
+                     mainPanel(
+                         plotOutput("reservePlot")
+                     )
+                 ) # end of sidebarLayout
         ), # end of tabPanel
+        tabPanel("Coins",
+             tabPanel("Transactions",
+                  # Application title
+                  titlePanel("Coin Analysis"),
+                  
+                  # Sidebar with a slider input for number of bins 
+                  sidebarLayout(
+                      sidebarPanel(
+                          selectInput("coin",
+                                      "Reserve Name:",
+                                      choices = reserveTypes$reserve,
+                                      multiple = FALSE),
+                          dateRangeInput("dateRange",
+                                         "Filter by date range:",
+                                         start = floor_date(minDate$time, unit = "day"),
+                                         end = ceiling_date(maxDate$time, unit = "day"))
+                      ),
+                      mainPanel(
+                          dygraphOutput("ratesPlot")
+                      )
+                  ) # end of sidebarLayout
+             )
+        ),
         tabPanel("New Tab",
                  # Add your tab here
-                 )
+        )
     ) # end of tabsetPanel
 ) # end of fluid_page
 
@@ -229,6 +249,35 @@ server <- function(input, output) {
         if(input$transactionGroups=="Separate") plot <- plot + facet_wrap(~ filteredTransactions$type)
         plot
         
+    })
+    
+    output$ratesPlot <- renderDygraph({
+        # subset rates dataframe into median stable and borrow rates for chosen coin by day
+        coin_rates <- rates %>%
+            filter(reserve == as.character(input$coin)) %>%
+            select(date, stableBorrowRate, variableBorrowRate) %>%
+            group_by(date) %>%
+            summarize(stable = median(stableBorrowRate), 
+                   variable = median(variableBorrowRate))
+        
+        # create time series class for dygraphs
+        xts <- xts(x = cbind(coin_rates$stable, coin_rates$variable),
+                   order.by = coin_rates$date)
+        
+        # create dygraph for stable and variable borrow rates
+        dygraph(xts, main = paste(input$coin, "Stable vs. Variable APR", sep = " ")) %>%
+            dySeries("V1", label = "Stable") %>%
+            dySeries("V2", label = "Variable") %>%
+            dyOptions(labelsUTC = TRUE, fillGraph = TRUE, fillAlpha = 0.1, drawGrid = FALSE,
+                      colors = "#D8AE5A") %>%
+            dyRangeSelector() %>%
+            dyCrosshair(direction = "vertical") %>%
+            dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2,
+                        hideOnMouseOut = FALSE)  %>%
+            dyRoller(rollPeriod = 1) %>%
+            # add % to axis label
+            dyAxis("y", valueFormatter = "function(v){return v.toFixed(1) + '%'}",
+                   axisLabelFormatter = "function(v){return v + '%'}")
     })
 }
 
