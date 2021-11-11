@@ -115,51 +115,51 @@ ui <- fluidPage(
     tabsetPanel(
         
         tabPanel("Transactions",
-                 # Application title
-                 titlePanel("AAVE Transactions Data Visualizer"),
+             # Application title
+             titlePanel("AAVE Transactions Data Visualizer"),
+             
+             # Sidebar with a slider input for number of bins 
+             sidebarLayout(
+                 sidebarPanel(
+                     dateRangeInput("dateRange",
+                                    "Filter by date range:",
+                                    start = floor_date(minDate$time, unit = "day"),
+                                    end = ceiling_date(maxDate$time, unit = "day")),
+                     radioButtons("bins",
+                                  "Group By:",
+                                  choices = c("day", "week", "month", "quarter"),
+                                  selected = "week",
+                                  inline=TRUE),
+                     selectInput("reserve",
+                                 "Reserve Name:",
+                                 choices = reserveTypes$reserve,
+                                 multiple = TRUE),
+                     radioButtons("reserveGroups",
+                                  "Reserve Grouping:",
+                                  choices = c("Separate", "Grouped"),
+                                  selected = "Grouped",
+                                  inline = TRUE),
+                     selectInput("transactionType",
+                                 "Transaction Type(s):",
+                                 choices = transactionTypes$type,
+                                 multiple = TRUE),
+                     radioButtons("transactionGroups",
+                                  "Transaction Grouping:",
+                                  choices = c("Separate", "Grouped"),
+                                  selected = "Grouped",
+                                  inline = "TRUE"),
+                     radioButtons("scaleBy",
+                                  "Scale By: ",
+                                  choices = c("Transaction Count", "Cumulative Transaction Value (USD)", "Cumulative Transaction Value (ETH)"),
+                                  selected = "Transaction Count")
+                     
+                 ),
                  
-                 # Sidebar with a slider input for number of bins 
-                 sidebarLayout(
-                     sidebarPanel(
-                         dateRangeInput("dateRange",
-                                        "Filter by date range:",
-                                        start = floor_date(minDate$time, unit = "day"),
-                                        end = ceiling_date(maxDate$time, unit = "day")),
-                         radioButtons("bins",
-                                      "Group By:",
-                                      choices = c("day", "week", "month", "quarter"),
-                                      selected = "week",
-                                      inline=TRUE),
-                         selectInput("reserve",
-                                     "Reserve Name:",
-                                     choices = reserveTypes$reserve,
-                                     multiple = TRUE),
-                         radioButtons("reserveGroups",
-                                      "Reserve Grouping:",
-                                      choices = c("Separate", "Grouped"),
-                                      selected = "Grouped",
-                                      inline = TRUE),
-                         selectInput("transactionType",
-                                     "Transaction Type(s):",
-                                     choices = transactionTypes$type,
-                                     multiple = TRUE),
-                         radioButtons("transactionGroups",
-                                      "Transaction Grouping:",
-                                      choices = c("Separate", "Grouped"),
-                                      selected = "Grouped",
-                                      inline = "TRUE"),
-                         radioButtons("scaleBy",
-                                      "Scale By: ",
-                                      choices = c("Transaction Count", "Cumulative Transaction Value (USD)", "Cumulative Transaction Value (ETH)"),
-                                      selected = "Transaction Count")
-                         
-                     ),
-                     
-                     
-                     mainPanel(
-                         plotOutput("reservePlot")
-                     )
-                 ) # end of sidebarLayout
+                 
+                 mainPanel(
+                     plotOutput("reservePlot")
+                 )
+             ) # end of sidebarLayout
         ), # end of tabPanel
         tabPanel("Coins",
              tabPanel("Transactions",
