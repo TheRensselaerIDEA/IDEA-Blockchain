@@ -1,0 +1,146 @@
+---
+title: "Clustering of AAVE Users"
+subtitle: "AAVE Users Analysis"
+author: "Cole Paquin"
+date: "11/3/2021"
+output:
+  pdf_document: default
+  html_document:
+    toc: true
+    number_sections: true
+    df_print: paged
+---
+
+```{r}
+#import libraries
+if (!require("ggplot2")) {
+   install.packages("ggplot2")
+   library(ggplot2)
+}
+if (!require("ggbiplot")) {
+   install.packages("ggbiplot")
+   library(ggbiplot)
+}
+
+```
+We begin by loading the RDS file in to a dataframe.
+```{r}
+#load in csv file to data frame
+df<-readRDS("~/transactionsv2.rds")
+df <- df %>%
+  filter(protocolContract == "False")
+head(df)
+```
+We reformat the dataframe so that each row represents a user, and the columns represent a summarization of the user's transaction history. 
+
+
+```{r}
+df.weekly<- df%>%group_by(user, user_alias)%>%
+  summarise(timefirst=min(anydate(timestamp)), timelast=max(anydate(timestamp)), N=n())
+#get the time the user has been active
+df.weekly$timeactive<-df.weekly$timelast-df.weekly$timefirst
+#get amounts for columns
+df$logUSD<-log10(df$amountUSD)
+df$logCollateralUSD<-log10(df$amountUSDCollateral)
+#get user's transaction information
+for(Type in unique(df$type)){
+  #filter for only transactions of certain type
+  df.type <-filter(df%>%group_by(user)%>%
+                     count(type),type==Type)
+  
+  #add  of each transaction type
+  if(Type!="liquidation" || Type!="swap"){
+    df.sum<-filter(df,type==Type)%>%
+      group_by(user)%>%
+      summarise(Sum=sum(logUSD))
+    colnames(df.sum)[2]<-paste('total_',Type,sep='')
+    df.weekly<-merge(x=df.weekly,y=df.sum,by="user",all.x=TRUE)
+  } 
+  
+  #add counts of transaction types to df
+  ntypes<-paste("n",Type,sep='')
+  colnames(df.type)[3]<-ntypes
+  df.weekly<-merge(x=df.weekly,y=select(df.type,user,ntypes),by="user",all.x=TRUE)
+}
+df.weekly <- rename(df.weekly, "name" = "user_alias")
+
+head(df.weekly)
+df.weekly$timeactive =as.numeric( df.weekly$timeactive / 7)
+df.weekly <- rename(df.weekly, "weeks" = "timeactive")
+
+```
+
+
+
+```{r}
+one_day <- df.weekly %>%
+  filter(weeks == 0)
+df.weekly <- df.weekly %>%
+  filter(weeks > 0)
+df.weekly$N =df.weekly$N / df.weekly$weeks
+df.weekly[,7:20] <- df.weekly[,7:20] / df.weekly$weeks
+one_day$N <- one_day$N * 7
+one_day[,7:20] <- one_day[,7:20] * 7
+df.weekly <- rbind(df.weekly, one_day)
+df.weekly <- rename(df.weekly, "weekly_n" = "N")
+head(df.weekly)
+liquids <- df.weekly %>%
+  filter(nliquidation > 0)
+```
+
+```{r}
+df.sub<-select(df.weekly,-c(user,name, total_liquidation, total_swap, total_collateral))
+#repalce missing values as 0's
+df.sub[is.na(df.sub)] <- 0
+#scale data
+df.scaled<-df.sub%>%mutate_all(scale)
+head(df.scaled)
+```
+Now, we perform PCA on the scaled data. 
+```{r}
+#perform pca on data
+my.pca<-prcomp(df.scaled,retx=TRUE,center=FALSE,scale=FALSE) # Run PCA and save to my.pca
+#make scree plot
+plot(my.pca, type="line")
+#summary of pca
+summary(my.pca)
+ncomps=5
+```
+
+
+```{r}
+#run kmeans algorithm
+set.seed(1)
+km <-kmeans(df.scaled,7)
+#plot frequencies of each cluster
+barplot(table(km$cluster),main="Kmeans Cluster Size")
+km$size
+```
+Finally, we view the centers of the kmeans clusters.
+```{r}
+#make heatmap of cluster centers
+heatmap.2(km$centers,
+scale = "col",
+dendrogram = "row",
+Colv=FALSE,
+cexCol=1.0,
+main = "Kmeans Cluster Centers",
+trace ="none")
+```
+# Exploring the Influential Factors with a Biplot 
+```{r}
+plot1<-ggbiplot(my.pca,choices=c(1,2),
+  var.axes=TRUE, # Display axes
+  ellipse = FALSE, # Don't display ellipse
+  obs.scale=1,
+  groups=as.factor(km$cluster)) +
+  ggtitle("User Data Projected on PC1 and PC2 ")
+plot1
+```
+
+```{r}
+df.clusters <- data.frame(name = df.weekly$name, cluster = km$cluster)
+head(df.clusters)
+#df <- left_join(df, df.clusters, by = "name") - Use this line to add a cluster column for the user of every transaction
+```
+
