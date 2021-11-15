@@ -227,7 +227,7 @@ server <- function(input, output) {
             ggtitle(title)
         
         if(input$transactionGroups=="Separate") plot <- plot + facet_wrap(~ filteredTransactions$type)
-        plot
+        plot + theme_gray()
         
     })
 }
