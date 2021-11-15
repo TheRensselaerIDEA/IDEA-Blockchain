@@ -32,7 +32,7 @@ if (!require("knitr")) {
 
 if (!require("dplyr")) {
     install.packages("dplyr")
-    library(dp)
+    library(dplyr)
 }
 
 if (!require("RColorBrewer")) {
@@ -164,7 +164,8 @@ ui <- fluidPage(
                 )
             ) # end of sidebarLayout
         ), # end of tabPanel
-        tabPanel("New Tab",
+        tabPanel("Survival Analysis",
+                 titlePanel("Kaplan-Meier and Cox Regression of Survival Probability")
                  # Add your tab here
                  )
     ) # end of tabsetPanel
