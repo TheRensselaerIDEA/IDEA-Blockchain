@@ -173,13 +173,14 @@ ui <- fluidPage(
                                       "Reserve Name:",
                                       choices = reserveTypes$reserve,
                                       multiple = FALSE),
-                          dateRangeInput("dateRange",
+                          dateRangeInput("coinDateRange",
                                          "Filter by date range:",
                                          start = floor_date(minDate$time, unit = "day"),
                                          end = ceiling_date(maxDate$time, unit = "day"))
                       ),
                       mainPanel(
-                          dygraphOutput("ratesPlot")
+                          dygraphOutput("ratesPlot"),
+                          tableOutput("ratesTable")
                       )
                   ) # end of sidebarLayout
              )
@@ -264,13 +265,16 @@ server <- function(input, output) {
         xts <- xts(x = cbind(coin_rates$stable, coin_rates$variable),
                    order.by = coin_rates$date)
         
+        date_range <- c(input$coinDateRange[1], input$coinDateRange[2])
+        
         # create dygraph for stable and variable borrow rates
         dygraph(xts, main = paste(input$coin, "Stable vs. Variable APR", sep = " ")) %>%
             dySeries("V1", label = "Stable") %>%
             dySeries("V2", label = "Variable") %>%
             dyOptions(labelsUTC = TRUE, fillGraph = TRUE, fillAlpha = 0.1, drawGrid = FALSE,
                       colors = "#D8AE5A") %>%
-            dyRangeSelector() %>%
+            dyRangeSelector(dateWindow = date_range) %>%
+            #dyRangeSelector() %>%
             dyCrosshair(direction = "vertical") %>%
             dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2,
                         hideOnMouseOut = FALSE)  %>%
@@ -278,6 +282,25 @@ server <- function(input, output) {
             # add % to axis label
             dyAxis("y", valueFormatter = "function(v){return v.toFixed(1) + '%'}",
                    axisLabelFormatter = "function(v){return v + '%'}")
+    })
+    
+    output$ratesTable <- renderTable({
+        # get coin borrow rate data between date ranges
+        coin_rates <- rates %>%
+            filter(reserve == as.character(input$coin) &
+                   date >= input$coinDateRange[1] &
+                   date <= input$coinDateRange[2]) %>%
+            select(date, stableBorrowRate, variableBorrowRate)
+        
+        # create output dataframe with summary data
+        data.frame(mean_stable = mean(coin_rates$stableBorrowRate), 
+                   med_stable = median(coin_rates$stableBorrowRate), 
+                   high_stable = max(coin_rates$stableBorrowRate), 
+                   low_stable = min(coin_rates$stableBorrowRate),
+                   mean_variable = mean(coin_rates$variableBorrowRate), 
+                   med_variable = median(coin_rates$variableBorrowRate), 
+                   high_variable = max(coin_rates$variableBorrowRate), 
+                   low_variable = min(coin_rates$variableBorrowRate))
     })
 }
 
