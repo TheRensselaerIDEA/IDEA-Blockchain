@@ -1,0 +1,388 @@
+---
+title: "DeFi Example Notebook: AAVE Users"
+subtitle: "AAVE Users Analysis"
+author: "Data Analytics Research Instructors"
+date: "08/27/2021"
+output:
+  pdf_document: default
+  html_document:
+    toc: true
+    number_sections: true
+    df_print: paged
+---
+
+## Note: Line 370 Shows Dual-Axis Graph Template
+
+```{r}
+#import libraries
+if (!require("ggplot2")) {
+   install.packages("ggplot2")
+   library(ggplot2)
+}
+if (!require("knitr")) {
+   install.packages("knitr")
+   library(knitr)
+}
+library(ggbiplot)
+library(gplots)
+library(RColorBrewer)
+library(beeswarm)
+library(tidyverse)
+library(tidyquant) 
+library(ggbeeswarm)
+library(foreach)
+library(doParallel)
+library(Rtsne)
+library(anytime)
+```
+We begin by loading the RDS file in to a dataframe.
+```{r}
+#load in csv file to data frame
+df<-readRDS("~/transactionsv2.rds")
+head(df)
+all_users <- c(df$user, df$onBehalfOf)
+length(unique(all_users))
+length(unique(df$user))
+```
+We reformat the dataframe so that each row represents a user, and the columns represent a summarization of the user's transaction history. 
+
+
+```{r}
+df.weekly<- df%>%group_by(user, user_alias)%>%
+  dplyr::summarise(timefirst=min(anydate(timestamp)), timelast=max(anydate(timestamp)), N=n())
+#get the time the user has been active
+df.weekly$timeactive<-df.weekly$timelast-df.weekly$timefirst
+#get amounts for columns
+df$logUSD<-log10(df$amountUSD)
+df$logCollateralUSD<-log10(df$amountUSDCollateral)
+#get user's transaction information
+for(Type in unique(df$type)){
+  #filter for only transactions of certain type
+  df.type <-filter(df%>%group_by(user)%>%count(type),type==Type)
+  #add  of each transaction type
+  if(Type!="liquidation" || Type!="swap"){
+    df.sum<-filter(df, type==Type)%>%
+      group_by(user)%>%
+      summarise(Sum=sum(logUSD))
+    colnames(df.sum)[2]<-paste('total_',Type,sep='')
+    df.weekly<-merge(x=df.weekly,y=df.sum,by="user",all.x=TRUE)
+  } 
+  
+  #add counts of transaction types to df
+  ntypes<-paste("n",Type,sep='')
+  colnames(df.type)[3]<-ntypes
+  df.weekly<-merge(x=df.weekly,y=select(df.type,user,ntypes),by="user",all.x=TRUE)
+}
+df.weekly <- rename(df.weekly, "name" = "user_alias")
+
+head(df.weekly)
+df.weekly$timeactive =as.numeric( df.weekly$timeactive / 7)
+df.weekly <- rename(df.weekly, "weeks" = "timeactive")
+```
+
+
+
+```{r}
+one_day <- df.weekly %>%
+  filter(weeks == 0)
+df.weekly <- df.weekly %>%
+  filter(weeks > 0)
+df.weekly$N =df.weekly$N / df.weekly$weeks
+df.weekly[,7:20] <- df.weekly[,7:20] / df.weekly$weeks
+one_day$N <- one_day$N * 7
+one_day[,7:20] <- one_day[,7:20] * 7
+df.weekly <- rbind(df.weekly, one_day)
+df.weekly <- rename(df.weekly, "weekly_n" = "N")
+head(df.weekly)
+liquids <- df.weekly %>%
+  filter(nliquidation > 0)
+```
+
+```{r}
+df.sub<-select(df.weekly,-c(user,name, total_liquidation, total_swap, total_collateral))
+#repalce missing values as 0's
+df.sub[is.na(df.sub)] <- 0
+#scale data
+df.scaled<-df.sub%>%mutate_all(scale)
+
+summary(df.scaled)
+```
+Now, we perform PCA on the scaled data. 
+```{r}
+#perform pca on data
+my.pca<-prcomp(df.scaled,retx=TRUE,center=FALSE,scale=FALSE) # Run PCA and save to my.pca
+#make scree plot
+plot(my.pca, type="line")
+#summary of pca
+summary(my.pca)
+ncomps=5
+```
+
+
+```{r}
+#run kmeans algorithm
+set.seed(1)
+km <-kmeans(df.scaled,7)
+#plot frequencies of each cluster
+barplot(table(km$cluster),main="Kmeans Cluster Size")
+km$size
+```
+Finally, we view the centers of the kmeans clusters.
+```{r}
+#make heatmap of cluster centers
+heatmap.2(km$centers,
+scale = "col",
+dendrogram = "row",
+Colv=FALSE,
+cexCol=1.0,
+main = "Kmeans Cluster Centers",
+trace ="none")
+```
+# Exploring the Influential Factors with a Biplot 
+```{r}
+plot1<-ggbiplot(my.pca,choices=c(1,2),
+  var.axes=TRUE, # Display axes
+  ellipse = FALSE, # Don't display ellipse
+  obs.scale=1,
+  groups=as.factor(km$cluster)) +
+  ggtitle("User Data Projected on PC1 and PC2 ")
+plot1
+```
+
+
+
+```{r}
+ggplot(df.weekly %>% filter(weekly_n <= 100), aes(x = weekly_n))+
+  geom_histogram(binwidth = 5, color = "black", fill = "white", aes(y = ..count../sum(..count..)))+
+  ggtitle("Number of Transactions per Week for Users with less than 100")+
+  scale_y_continuous(labels=percent)+
+  labs(y = "Percent of Users", x = "Number of Transactions")
+```
+
+```{r}
+df.clusters <- data.frame(cluster = km$cluster, name = df.weekly$name)
+df.clusters <- left_join(df.weekly, df.clusters, by = "name")
+```
+
+```{r}
+num_clusters <- length(unique(km$cluster))
+mean(df.weekly$weekly_n)
+for (x in 1:num_clusters){
+  cluster_x <- df.clusters %>%
+    filter(cluster == x)
+  print(paste("Cluster",x, ":",  round(mean(cluster_x$weekly_n), 2)))
+}
+```
+
+```{r}
+for (x in 1:num_clusters){
+  cluster_x <- df.clusters %>%
+    filter(cluster == x)
+  print(paste("Cluster",x, ":",  round(mean(cluster_x$weeks), 2)))
+}
+```
+
+```{r}
+df.clusters[is.na(df.clusters)] <- 0
+head(df.clusters)
+
+```
+
+
+```{r}
+by_c <- df.clusters %>%
+  group_by(cluster)
+by_c %>% 
+  summarise(
+    first_transaction = mean(timefirst),
+    weeks = mean(weeks),
+    weekly_transactions = mean(weekly_n),
+    weekly_borrows = mean(nborrow),
+    weekly_borrow_amount_logUSD = mean(total_borrow),
+    weekly_repays = mean(nrepay),
+    weekly_repay_amount_logUSD = mean(total_repay),
+    weekly_liquidation = mean(nliquidation),
+    weekly_deposits = mean(ndeposit),
+    weekly_deposit_amount_logUSD = mean(total_deposit),
+    weekly_redeems = mean(nredeem),
+    weekly_redeem_amount_logUSD = mean(total_redeem),
+    weekly_swaps = mean(nswap),
+    weekly_collateral = mean(ncollateral),
+  )
+```
+
+```{r}
+cl6 <- df.clusters %>%
+  filter(cluster == 6)
+cl6$name
+```
+
+```{r}
+outliers_onbehalfof <- df %>%
+  filter(onBehalfOf_alias %in% cl6$name)
+outliers_users <- df %>%
+  filter(user_alias %in% cl6$name)
+length(unique(outliers_onbehalfof$onBehalfOf_alias))
+length(unique(outliers_users$user_alias))
+# Patrick Johnson is the only one who is never seen in onBehalfOf
+percent_outlier <-sum(nrow(outliers_onbehalfof), nrow(outliers_users))/nrow(df) *100
+print(paste("Outliers are involved in", round(percent_outlier, 2), "Percent of our Transactions"))
+```
+
+```{r}
+user <- unique(outliers_users$user)[4]
+format(user, scientific = FALSE)
+```
+
+```{r}
+contracts <- df %>%
+  filter(protocolContract == "True")
+unique(contracts$user_alias)
+df %>%
+  filter(user_alias == "Patrick Johnson")
+```
+
+```{r}
+l <- df %>%
+  filter(type == "liquidation")
+mean(l$amountUSDCollateral)
+mean(l$amountUSDPincipal)
+```
+
+```{r}
+df["date"] = anydate(df$timestamp)
+unique_users <- df %>%
+  group_by(date)%>%
+  summarise(num_users = n_distinct(user))
+ggplot(unique_users) + geom_line(aes(x = date, y = num_users))+
+  ggtitle("Number of Unique Users Active Per Day")+
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%y")+
+  geom_ma(n = 30, aes(x=date, y = num_users, colour = "red"))
+
+```
+
+```{r}
+cum_users <- df.weekly %>%
+  select(timefirst, user)
+cum_users <- cum_users %>%
+  count(timefirst)
+cum_users <- cum_users %>% 
+  mutate(cum = cumsum(n))
+ggplot(cum_users) + geom_line(aes(x = timefirst, y = cum))+
+  ggtitle("Total AAVE Users Over Time")+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  labs(x = "Date", y = "Number of Users")
+
+```
+
+```{r}
+top_10_graphs <- df %>% 
+  add_count(reserve) %>% 
+  filter(dense_rank(-n) <= 6 & (type == "deposit" | type == "redeem"))
+deposits <- top_10_graphs %>%
+  filter(type == "deposit") %>%
+  group_by(date, reserve) %>%
+  summarise(value = sum(amountUSD), reserve = reserve)
+redeems <- top_10_graphs %>%
+  filter(type == "redeem") %>%
+  group_by(date, reserve) %>%
+  summarise(value = sum(amountUSD), reserve = reserve)
+deposits <- distinct(deposits, date, reserve, .keep_all= TRUE)
+redeems <- distinct(redeems, date, reserve, .keep_all= TRUE)
+
+```
+
+```{r}
+all_deposits <- df %>%
+  filter(type == "deposit") %>%
+  group_by(date) %>%
+  summarise(value = sum(amountUSD))
+
+all_redeems <- df %>%
+  filter(type == "redeem") %>%
+  group_by(date) %>%
+  summarise(value = sum(amountUSD))
+ggplot() + 
+  geom_line(data = all_deposits, aes(x = date, y = value, color = "Deposit"))+
+  geom_line(data = all_redeems, aes(x = date, y = value, color = "Redeem"))+
+  scale_color_manual(name = "Transaction Type", values = c("Redeem" = "red", "Deposit" = "darkgreen"))+
+  scale_y_continuous(labels = comma)+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  ggtitle("Daily Amount Deposited/Redeemed")+
+  xlab("Date")+
+  ylab("Amount (USD)")
+```
+
+
+```{r}
+ggplot() + 
+  geom_line(data = deposits, aes(x = date, y = value, color = "Deposit"))+
+  geom_line(data = redeems, aes(x = date, y = value, color = "Redeem"))+
+  scale_color_manual(name = "Transaction Type", values = c("Redeem" = "red", "Deposit" = "darkgreen"))+
+  scale_y_continuous(labels = comma)+
+  facet_wrap(~ reserve)+
+  ggtitle("Daily Amount Deposited/Redeemed")+
+  xlab("Date")+
+  ylab("Amount (USD)")
+```
+
+```{r}
+all_borrows <- df %>%
+  filter(type == "borrow") %>%
+  group_by(date) %>%
+  summarise(value = sum(amountUSD))
+
+all_repays <- df %>%
+  filter(type == "repay") %>%
+  group_by(date) %>%
+  summarise(value = sum(amountUSD))
+ggplot() + 
+  geom_line(data = all_borrows, aes(x = date, y = value, color = "Borrow"))+
+  geom_line(data = all_repays, aes(x = date, y = value, color = "Repay"))+
+  scale_color_manual(name = "Transaction Type", values = c("Borrow" = "red", "Repay" = "blue"))+
+  scale_y_continuous(labels = comma)+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  ggtitle("Daily Amount Borrowed/Repayed")+
+  xlab("Date")+
+  ylab("Amount (USD)")
+```
+
+```{r}
+dai <- df %>% 
+  filter(reserve == "DAI")
+dd <- dai %>% 
+  filter(type == "deposit")
+dr <- dai %>% filter(type == "redeem")
+total <- sum(dd$amountUSD) - sum(dr$amountUSD)
+prettyNum(total, big.mark = ",", scientific = FALSE)  #prettyNum function
+
+```
+
+```{r}
+all_deposits <- df %>%
+  filter(type == "deposit" & date > "2021-04-28") %>%
+  group_by(date) %>%
+  summarise(value = sum(amountUSD), count = n())
+all_deposits
+max(all_deposits$count)
+```
+
+
+```{r}
+x <- median(all_deposits$value) / median(all_deposits$count)
+
+ggplot(all_deposits, aes(x = date))+ 
+  geom_line(aes(y = value, colour = "Amount"))+
+  geom_line(aes(y = count*x, colour = "# Transactions"))+
+  scale_y_continuous(labels = comma, sec.axis = sec_axis(~./x, name = "# of Deposits"))+
+  scale_colour_manual(values = c("blue", "red"))+
+  labs(y = "Amount (USD)",x = "Month",colour = "Parameter")+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  theme(legend.position = c(0.9, 0.9))+
+  ggtitle("Deposits Summary")
+```
+
+```{r}
+all_deposits
+```
+
