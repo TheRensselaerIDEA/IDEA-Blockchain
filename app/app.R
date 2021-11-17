@@ -161,9 +161,6 @@ ui <- fluidPage(
                  )
              ) # end of sidebarLayout
         ), # end of tabPanel
-        tabPanel("Survival Analysis",
-                 titlePanel("Kaplan-Meier and Cox Regression of Survival Probability")
-        ),
         tabPanel("Coins",
              tabPanel("Transactions",
                   # Application title
