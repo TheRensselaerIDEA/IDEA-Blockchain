@@ -157,7 +157,7 @@ ui <- fluidPage(
                  
                  
                  mainPanel(
-                     plotOutput("reservePlot")
+                     plotlyOutput("reservePlot")
                  )
              ) # end of sidebarLayout
         ), # end of tabPanel
@@ -194,7 +194,7 @@ ui <- fluidPage(
 # Define server logic required to draw a histogram
 server <- function(input, output) {
     
-    output$reservePlot <- renderPlot({
+    output$reservePlot <- renderPlotly({
         # Set up the x-axis bounds based on the time range and time intervals
         # selected by the user, and filter the transactions by these dates.
         timeInterval <- interval(input$dateRange[1], input$dateRange[2])
@@ -226,8 +226,8 @@ server <- function(input, output) {
         }else if(input$scaleBy == "Cumulative Transaction Value (USD)"){
             filteredTransactions <- typeFilteredTransactions %>%
                 group_by(reserve, roundedTime) %>%
-                mutate(yScale = cumsum(amountUSD))
-            yLabPrefix <- "USD Value of "
+                mutate(yScale = cumsum(amountUSD)/1e6)
+            yLabPrefix <- "USD Value (in millions) of "
         }else if(input$scaleBy == "Cumulative Transaction Value (ETH)"){
             filteredTransactions <- typeFilteredTransactions %>%
                 group_by(reserve, roundedTime) %>%
@@ -242,13 +242,15 @@ server <- function(input, output) {
                plotAES <- aes(filteredTransactions$roundedTime, filteredTransactions$yScale))
         title <- str_c(yLabPrefix, typeString, "for ", reserveString, sep='')
         
+        
         plot <- ggplot(filteredTransactions, plotAES) + geom_col() +
             xlab(str_to_title(input$bins)) +
             ylab(str_c(yLabPrefix, typeString, sep=""))+
             ggtitle(title)
-        
+
         if(input$transactionGroups=="Separate") plot <- plot + facet_wrap(~ filteredTransactions$type)
-        plot
+        ggplotly(plot)
+        
         
     })
     
