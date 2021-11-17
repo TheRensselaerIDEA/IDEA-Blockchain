@@ -1,0 +1,242 @@
+---
+title: "DAR F21 Project Status"
+author: "Soumya Mishra"
+date: "10/14/2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DeFi"
+---
+
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+# CAUTION: DO NOT interrupt R as it installs packages!!
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dp)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+if (!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+
+#librdate
+```
+
+
+```{r}
+#load Rds (binary version of csv file) into dataframe
+# Assumes this notebook is in: ~/IDEA-Blockchain/DefiResearch/StudentNotebooks/Assignment02
+df<-read_rds('../../Data/transactions.Rds')
+
+# Let's take a quick look at the first few observation
+head(df)
+```
+
+
+```{r}
+#load borrows
+borrow.df<-df%>% filter(type=="borrow")%>%
+  select(user, timestamp, amountUSD)
+head(borrow.df)
+#load repays
+repay.df<-df%>% filter(type=="repay")%>%
+  select(user, timestamp, amountUSD)
+head(borrow.df)
+
+#create table for borrow repay
+borrowRepay <- left_join(borrow.df,repay.df,by="user")%>%
+  arrange(user)%>%
+  rename(borrowTime=timestamp.x)%>%
+  rename(repayTime = timestamp.y)%>%
+  rename(borrowAmt = amountUSD.x)%>%
+  rename(repayAmt = amountUSD.y)%>%
+  mutate(timeDiff = repayTime-borrowTime)%>%
+  mutate(amtPercent = 100*repayAmt/borrowAmt)%>%
+  filter(timeDiff>0)
+
+head(borrowRepay)
+
+```
+
+```{r}
+#load deposits
+deposits.df<-df%>% filter(type=="deposit")%>%
+  select(user, timestamp, amountUSD)
+head(deposits.df)
+#load redeems
+redeem.df<-df%>% filter(type=="redeem")%>%
+  select(user, timestamp,amountUSD)
+head(redeem.df)
+#create table for redeems and deposits
+redeemDeposit <- left_join(deposits.df, redeem.df,by="user")%>%
+  arrange(user)%>%
+  rename(depositTime=timestamp.x)%>%
+  rename(redeemTime = timestamp.y)%>%
+  rename(depositAmt = amountUSD.x)%>%
+  rename(redeemAmt = amountUSD.y)%>%
+  mutate(amtPercent = 100*redeemAmt/depositAmt)%>%
+  mutate(timeDiff = depositTime-redeemTime)%>%
+  filter(timeDiff>0)%>%
+  filter(amtPercent>0)
+head(redeemDeposit)
+
+
+
+```
+
+```{r}
+#load liquidation data
+liquidation.df<-df%>% filter(type=="liquidation")%>%
+  select(user, timestamp)
+head(liquidation.df)
+#load borrows
+borrow.df<-df%>% filter(type=="borrow")%>%
+  select(onBehalfOf, timestamp)%>%
+  rename(user = onBehalfOf)
+head(borrow.df)
+
+#join table
+liqTable <- left_join(borrow.df,liquidation.df,by="user")%>%
+  arrange(user)%>%
+  rename(borrowTime=timestamp.x)%>%
+  rename(liquidationTime = timestamp.y)%>%
+  mutate(timeDiff = borrowTime-liquidationTime)%>%
+  filter(timeDiff>0)
+  
+head(liqTable)
+
+
+
+```
+
+
+```{r}
+# Basic density for time to redeem
+p <- ggplot(redeemDeposit, aes(x=timeDiff/86400)) + 
+  xlim(0,300) +
+  ylim(0,0.03)+
+  xlab("Time Difference in Days")+
+  geom_density()+
+  ggtitle("Time to Redeem from Deposit")
+p
+
+```
+
+```{r}
+# Basic density for liquidation
+p <- ggplot(liqTable, aes(x=timeDiff/86400)) +
+  xlim(0,300) +
+  ylim(0,0.03)+
+  xlab("Time Difference in Days")+
+  geom_density()+
+  ggtitle("Time to Liqudation from Borrow")
+p
+
+```
+
+```{r}
+# Basic density for repayment
+p <- ggplot(borrowRepay, aes(x=timeDiff/86400)) + 
+  xlab("Time Difference in Days")+
+  xlim(0,300) +
+  ylim(0,0.03)+
+  geom_density()+
+  ggtitle("Time to Repay from Borrow")
+p
+
+```
+```{r}
+# Basic density of percent redeemed from Deposit
+
+p <- ggplot(redeemDeposit, aes(x=log10(amtPercent))) + 
+  geom_histogram(binwidth=.1)+
+  ggtitle("Percent Redeemed Distribution")
+p
+
+
+```
+
+```{r}
+# Basic density of percent repaid to borrow
+
+p <- ggplot(borrowRepay, aes(x=log10(amtPercent))) + 
+  geom_histogram(binwidth=.1)+
+  ggtitle("Percent Repaid to Borrow Distribution")
+p
+
+
+```
+
+
+## Weekly Work Summary	
+
+* RCS ID: mishrs4
+* Project Name: Defi
+* Summary of work since last week 
+
+
+https://docs.google.com/presentation/d/1eVkf-xFs-Wm57odNED6eebXvjaKUZdA-JZ2O7r2B7Co/edit#slide=id.gf8d196e8cf_0_4
+
+https://docs.google.com/presentation/d/1vOsP50vJIBxt_PH6GH7CHy2uFPmFkKMDnyWyr24cPk8/edit#slide=id.p
+
+
+## Personal Contribution	
+
+I graphed the distribution of how long it took for a repayment, redeem, or liquidation to compare the different transaction types and the time they each take
+
+## Discussion of Primary Findings 	
+
+The main question I was looking to answer is "How well does DeFi replicate traditional finance? How do the transaction types differ?
+
+I found liquidation was most likely to occur the fastest, then redeemption, then repayment of a borrow. 
+
+Currently I have analyzed how the time it takes to repay an amount borrowed looks over time, the time it takes to redeem an amount deposited looks over time, and the time it takes to reach liquidation. 
+
+I also graphed the percent redeemed and repaied to compare the two and it seems there is a lot more of a spread for redeeming than repaying. 
+
+
+
