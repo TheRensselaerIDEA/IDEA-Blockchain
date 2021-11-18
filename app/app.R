@@ -187,6 +187,25 @@ ui <- fluidPage(
         ),
         tabPanel("New Tab",
                  # Add your tab here
+        ),
+        tabPanel("Survival Analysis",
+                 sidebarLayout(
+                     sidebarPanel(
+                         selectInput("start",
+                                     "Start Type:",
+                                     choices = transactionTypes$type,
+                                     multiple = FALSE),
+                         selectInput("end",
+                                     "End Type:",
+                                     choices = transactionTypes$type,
+                                     multiple = FALSE)
+                     ),
+                     
+                     mainPanel(
+                         plotOutput("survivalPlot")
+                     )
+                 )
+                 
         )
     ) # end of tabsetPanel
 ) # end of fluid_page
@@ -303,6 +322,27 @@ server <- function(input, output) {
                    med_variable = median(coin_rates$variableBorrowRate), 
                    high_variable = max(coin_rates$variableBorrowRate), 
                    low_variable = min(coin_rates$variableBorrowRate))
+    })
+    
+    output$survivalPlot <- renderPlot({
+        start <- transactions %>%
+          filter(type==input$start)
+
+        end <- transactions %>%
+          filter(type==input$end)
+
+        dataSet <- left_join(end,start,by="user") %>%
+            dplyr::rename(endTime=timestamp.x) %>%
+            dplyr::rename(startTime=timestamp.y) %>%
+            group_by(user) %>%
+            dplyr::summarise(timeDiff=case_when(min(startTime)-min(endTime)>0 ~   min(startTime)-min(endTime), TRUE ~ as.integer(21294796))) %>%
+            mutate(status=case_when(timeDiff==as.integer(21294796) ~ 0, timeDiff<=0 ~ 0, timeDiff>0 ~ 1)) %>%
+            select(user,timeDiff,status)
+        
+        km <- with(dataSet, Surv(timeDiff/86400, status))
+        km_fit <- survfit(Surv(timeDiff/86400, status) ~ 1, data=dataSet)
+        p1 <- autoplot(km_fit,xlab="time (days)",ylab="Survival Percent",title="Survival Analysis")
+        p1
     })
 }
 
