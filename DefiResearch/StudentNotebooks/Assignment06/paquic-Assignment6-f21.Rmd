@@ -360,16 +360,22 @@ prettyNum(total, big.mark = ",", scientific = FALSE)  #prettyNum function
 
 ```{r}
 all_deposits <- df %>%
-  filter(type == "deposit" & date > "2021-04-28") %>%
+  filter(type == "deposit") %>%
   group_by(date) %>%
   summarise(value = sum(amountUSD), count = n())
-all_deposits
-max(all_deposits$count)
+all_borrows <- df %>%
+  filter(type == "borrow") %>%
+  group_by(date) %>%
+  summarise(value = sum(amountUSD), count = n())
+all_redeems <- df %>%
+  filter(type == "redeem") %>%
+  group_by(date) %>%
+  summarise(value = sum(amountUSD), count = n())
 ```
 
 
 ```{r}
-x <- median(all_deposits$value) / median(all_deposits$count)
+x <- mean(all_deposits$value) / mean(all_deposits$count)
 
 ggplot(all_deposits, aes(x = date))+ 
   geom_line(aes(y = value, colour = "Amount"))+
@@ -383,6 +389,115 @@ ggplot(all_deposits, aes(x = date))+
 ```
 
 ```{r}
-all_deposits
+x <- mean(all_borrows$value) / mean(all_borrows$count)
+
+ggplot(all_borrows, aes(x = date))+ 
+  geom_line(aes(y = value, colour = "Amount"))+
+  geom_line(aes(y = count*x, colour = "# Transactions"))+
+  scale_y_continuous(labels = comma, sec.axis = sec_axis(~./x, name = "# of Borrows"))+
+  scale_colour_manual(values = c("blue", "red"))+
+  labs(y = "Amount (USD)",x = "Month",colour = "Parameter")+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  theme(legend.position = c(0.9, 0.9))+
+  ggtitle("Borrows Summary")
+
+```
+
+```{r}
+x <- mean(all_redeems$value) / mean(all_redeems$count)
+
+ggplot(all_redeems, aes(x = date))+ 
+  geom_line(aes(y = value, colour = "Amount"))+
+  geom_line(aes(y = count*x, colour = "# Transactions"))+
+  scale_y_continuous(labels = comma, sec.axis = sec_axis(~./x, name = "# of Redeems"))+
+  scale_colour_manual(values = c("blue", "red"))+
+  labs(y = "Amount (USD)",x = "Month",colour = "Parameter")+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  theme(legend.position = c(0.9, 0.9))+
+  ggtitle("Redeems Summary")
+```
+
+## Build Utilization Charts
+
+```{r}
+coins <- "USDT"
+dates <- as.data.frame(unique(df$date))
+colnames(dates) <- c("date")
+coin <- df %>%
+  filter(reserve == coins)
+dep<- coin %>%
+  filter(type == "deposit") %>%
+  group_by(date) %>%
+  summarise(date = date, deposit_amount = cumsum(sum(amount)))%>%
+  distinct()
+red<-coin %>%
+  filter(type == "redeem") %>%
+  group_by(date) %>%
+  summarise(date= date, redeem_amount = cumsum(sum(amount)))%>%
+  distinct()
+rep <- coin %>%
+  filter(type == "repay") %>%
+  group_by(date) %>%
+  summarise(date = date, repay_amount = cumsum(sum(amount)))%>%
+  distinct()
+bor <- coin %>%
+  filter(type == "borrow") %>%
+  group_by(date) %>%
+  summarise(date = date, borrow_amount = cumsum(sum(amount)))%>%
+  distinct()
+
+
+util_summary <- dates %>% left_join(dep, by = "date")
+util_summary <- util_summary %>% left_join(red, by = "date")
+util_summary <- util_summary %>% left_join(rep, by = "date")
+util_summary <- util_summary %>% left_join(bor, by = "date")
+util_summary[is.na(util_summary)] <- 0
+util_summary <- util_summary %>%
+  arrange(date)
+util_summary$cum_deposit <- cumsum(util_summary$deposit_amount)
+util_summary$cum_redeem <- cumsum(util_summary$redeem_amount)
+util_summary$cum_borrow <- cumsum(util_summary$borrow_amount)
+util_summary$cum_repay <- cumsum(util_summary$repay_amount)
+util_summary$all_money <- util_summary$cum_deposit - util_summary$cum_redeem
+util_summary$rate <- round((util_summary$cum_borrow) / (util_summary$all_money +util_summary$cum_repay) *100,2)
+util_summary[is.na(util_summary)] <- 0
+```
+
+
+```{r}
+# https://docs.aave.com/risk/liquidity-risk/historical-utilization
+
+
+ggplot(util_summary)+
+  geom_line(aes(x = date, y = rate))+
+    scale_x_date(date_breaks = "1 month", date_labels = "%b-%y")+
+    ggtitle(paste(coins,  "Utilization Summary"))
+
+```
+
+```{r}
+x <- max(util_summary$all_money) / max(util_summary$rate)
+
+ggplot(util_summary, aes(x = date))+ 
+  geom_line(aes(y = all_money, colour = "Overall Liquidity"))+
+  geom_line(aes(y = cum_deposit, colour = "Total Deposits"))+
+  geom_line(aes(y = cum_redeem, colour = "Total Redeems"))+
+  geom_line(aes(y = cum_borrow - cum_repay, colour = "Outstanding Borrows")) +
+  geom_line(aes(y = rate*x, colour = "Utilization Rate"))+
+  scale_y_continuous(labels = comma, sec.axis = sec_axis(~./x, name = "Utilization Rate (%)"))+
+  scale_colour_manual(values = c("blue", "dark green", "orange", "purple", "red"))+
+  labs(y = paste("Amount", coins),x = "Month",colour = "Parameter")+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  ggtitle(paste(coins,  "Utilization Summary"))
+mean(util_summary$rate)
+```
+
+```{r}
+head(df%>%
+       filter(type == "liquidation" & principalReserve == "BUSD"))
+```
+
+```{r}
+head(util_summary)
 ```
 
