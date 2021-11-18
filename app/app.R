@@ -82,6 +82,7 @@ transactions <- read_rds('Data/transactionsv2.rds')
 transactions <- transactions %>%
     mutate(datetime = as_datetime(timestamp)) %>%
     mutate(amountETH = amount*reservePriceETH)
+transactions$date <- as.Date(as.POSIXct(transactions$datetime, origin = "1970-01-01"))
 
 reserveTypes <- transactions %>%
     distinct(reserve) %>%
@@ -180,7 +181,9 @@ ui <- fluidPage(
                       ),
                       mainPanel(
                           dygraphOutput("ratesPlot"),
-                          tableOutput("ratesTable")
+                          tableOutput("ratesTable"),
+                          dygraphOutput("borrowRepayPlot"),
+                          dygraphOutput("depositRedeemPlot")
                       )
                   ) # end of sidebarLayout
              )
@@ -276,7 +279,6 @@ server <- function(input, output) {
             dyOptions(labelsUTC = TRUE, fillGraph = TRUE, fillAlpha = 0.1, drawGrid = FALSE,
                       colors = "#D8AE5A") %>%
             dyRangeSelector(dateWindow = date_range) %>%
-            #dyRangeSelector() %>%
             dyCrosshair(direction = "vertical") %>%
             dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2,
                         hideOnMouseOut = FALSE)  %>%
@@ -295,14 +297,78 @@ server <- function(input, output) {
             select(date, stableBorrowRate, variableBorrowRate)
         
         # create output dataframe with summary data
-        data.frame(mean_stable = mean(coin_rates$stableBorrowRate), 
-                   med_stable = median(coin_rates$stableBorrowRate), 
-                   high_stable = max(coin_rates$stableBorrowRate), 
-                   low_stable = min(coin_rates$stableBorrowRate),
-                   mean_variable = mean(coin_rates$variableBorrowRate), 
-                   med_variable = median(coin_rates$variableBorrowRate), 
-                   high_variable = max(coin_rates$variableBorrowRate), 
-                   low_variable = min(coin_rates$variableBorrowRate))
+        coin_borrow_stats <- 
+            data.frame(mean_stable = mean(coin_rates$stableBorrowRate), 
+                       median_stable = median(coin_rates$stableBorrowRate), 
+                       high_stable = max(coin_rates$stableBorrowRate), 
+                       low_stable = min(coin_rates$stableBorrowRate),
+                       mean_variable = mean(coin_rates$variableBorrowRate), 
+                       median_variable = median(coin_rates$variableBorrowRate), 
+                       high_variable = max(coin_rates$variableBorrowRate), 
+                       low_variable = min(coin_rates$variableBorrowRate))
+        
+        # rename column names
+        coin_borrow_stats <- coin_borrow_stats %>%
+            rename("Mean Stable Rate" = mean_stable,
+                   "Median Stable Rate" = median_stable,
+                   "High Stable Rate" = high_stable,
+                   "Low Stable Rate" = low_stable,
+                   "Mean Variable Rate" = mean_variable,
+                   "Median Variable Rate" = median_variable,
+                   "High Variable Rate" = high_variable,
+                   "Low Variable Rate" = low_variable)
+        
+        coin_borrow_stats
+    })
+    
+    output$borrowRepayPlot <- renderDygraph({
+        br_df <- transactions %>%
+            filter(reserve == as.character(input$coin)) %>%
+            group_by(date) %>%
+            summarize(borrowed = sum(amountUSD[type == "borrow"]),
+                      repayed = sum(amountUSD[type == "repay"]))
+        
+        # create time series class for dygraphs
+        br_xts <- xts(x = cbind(br_df$borrowed, br_df$repayed), order.by = br_df$date)
+        
+        date_range <- c(input$coinDateRange[1], input$coinDateRange[2])
+        
+        # create dygraph for stable and variable borrow rates
+        dygraph(br_xts, main = paste(input$coin, "(in USD) Borrowed vs. Repayed", sep = " ")) %>%
+            dySeries("V1", label = "Borrowed") %>%
+            dySeries("V2", label = "Repayed") %>%
+            dyOptions(labelsUTC = TRUE, fillGraph = TRUE, fillAlpha = 0.1, drawGrid = FALSE,
+                      colors = "#D8AE5A") %>%
+            dyRangeSelector(dateWindow = date_range) %>%
+            dyCrosshair(direction = "vertical") %>%
+            dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2,
+                        hideOnMouseOut = FALSE)  %>%
+            dyRoller(rollPeriod = 1)
+    })
+    
+    output$depositRedeemPlot <- renderDygraph({
+        br_df <- transactions %>%
+            filter(reserve == as.character(input$coin)) %>%
+            group_by(date) %>%
+            summarize(deposited = sum(amountUSD[type == "deposit"]),
+                      redeemed = sum(amountUSD[type == "redeem"]))
+        
+        # create time series class for dygraphs
+        br_xts <- xts(x = cbind(br_df$deposited, br_df$redeemed), order.by = br_df$date)
+        
+        date_range <- c(input$coinDateRange[1], input$coinDateRange[2])
+        
+        # create dygraph for stable and variable borrow rates
+        dygraph(br_xts, main = paste(input$coin, "(in USD) Deposited vs. Redeemed", sep = " ")) %>%
+            dySeries("V1", label = "Deposited") %>%
+            dySeries("V2", label = "Redeemd") %>%
+            dyOptions(labelsUTC = TRUE, fillGraph = TRUE, fillAlpha = 0.1, drawGrid = FALSE,
+                      colors = "#D8AE5A") %>%
+            dyRangeSelector(dateWindow = date_range) %>%
+            dyCrosshair(direction = "vertical") %>%
+            dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2,
+                        hideOnMouseOut = FALSE)  %>%
+            dyRoller(rollPeriod = 1)
     })
 }
 
