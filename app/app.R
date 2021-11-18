@@ -27,7 +27,7 @@ if (!require("knitr")) {
 }
 if (!require("dplyr")) {
     install.packages("dplyr")
-    library(dp)
+    library(dplyr)
 }
 if (!require("RColorBrewer")) {
     install.packages("RColorBrewer")
