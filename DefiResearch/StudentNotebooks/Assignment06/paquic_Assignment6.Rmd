@@ -1,0 +1,403 @@
+---
+title: "DAR F21 Project Status Notebook"
+author: "Cole Paquin"
+date: "11/18/2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DeFi"
+---
+
+## Weekly Work Summary	
+
+**NOTE:** Follow an outline format; use bullets to express individual points. 
+
+* RCS ID: Paquic
+* Project Name: DeFi
+* Summary of work since last week- I have been working on visualizations to distinguish how coins are used over time.
+
+    * Describe the important aspects of what you worked on and accomplished
+As we will see below, I have created charts to show the different transactions types and their amounts by coin. I've also attempted to model the traditional utilization rate, which has shown some interesting results.
+
+* Summary of github issues added and worked 
+
+    - Issue #86 (Closed) - Added my clusters to the app folder to be used for survival analysis
+    - Issue #93/#95 - Many of the nansen charts have been made (will close soon)
+
+* Summary of github commits 
+
+    * branch name - dar-paquic
+    * Github Commits:
+      - paquic-Assignment6-f21.Rmd
+      - paquic_Assignment6.Rmd
+      - paquic_Assignment6.pdf
+
+## Personal Contribution	
+
+All code has been written by me.
+
+## Discussion of Primary Findings 	
+
+* Discuss primary findings: 
+
+    * What did you want to know? 
+  I wanted to know if different coins are used in different ways, and if there is a way that we can better visualize the differences.
+    * How did you go about finding it? 
+I used the concept of utilization rate to be able to show that different types of coins have very different usages. This means that we look at the amount of money being borrowed relative to the total amount of liquidity.
+    * What did you find?
+    
+First we do some basic setup and create our main dataframe.
+	
+```{r, message=FALSE, warning=FALSE}
+#import libraries
+if (!require("ggplot2")) {
+   install.packages("ggplot2")
+   library(ggplot2)
+}
+if (!require("knitr")) {
+   install.packages("knitr")
+   library(knitr)
+}
+if (!require("reshape2")) {
+   install.packages("reshape2")
+   library(reshape2)
+}
+library(ggbiplot)
+library(gplots)
+library(RColorBrewer)
+library(beeswarm)
+library(tidyverse)
+library(tidyquant) 
+library(ggbeeswarm)
+library(foreach)
+library(doParallel)
+library(Rtsne)
+library(anytime)
+```
+
+```{r}
+#load in csv file to data frame
+df<-readRDS("~/transactionsv2.rds")
+head(df)
+```
+
+```{r}
+df.weekly<- df%>%group_by(user, user_alias)%>%
+  dplyr::summarise(timefirst=min(anydate(timestamp)), timelast=max(anydate(timestamp)), N=n())
+#get the time the user has been active
+df.weekly$timeactive<-df.weekly$timelast-df.weekly$timefirst
+#get amounts for columns
+df$logUSD<-log10(df$amountUSD)
+df$logCollateralUSD<-log10(df$amountUSDCollateral)
+#get user's transaction information
+for(Type in unique(df$type)){
+  #filter for only transactions of certain type
+  df.type <-filter(df%>%group_by(user)%>%count(type),type==Type)
+  #add  of each transaction type
+  if(Type!="liquidation" || Type!="swap"){
+    df.sum<-filter(df, type==Type)%>%
+      group_by(user)%>%
+      summarise(Sum=sum(logUSD))
+    colnames(df.sum)[2]<-paste('total_',Type,sep='')
+    df.weekly<-merge(x=df.weekly,y=df.sum,by="user",all.x=TRUE)
+  } 
+  
+  #add counts of transaction types to df
+  ntypes<-paste("n",Type,sep='')
+  colnames(df.type)[3]<-ntypes
+  df.weekly<-merge(x=df.weekly,y=select(df.type,user,ntypes),by="user",all.x=TRUE)
+}
+df.weekly <- rename(df.weekly, "name" = "user_alias")
+
+head(df.weekly)
+df.weekly$timeactive =as.numeric( df.weekly$timeactive / 7)
+df.weekly <- rename(df.weekly, "weeks" = "timeactive")
+```
+
+So I knew that we wanted to produce some of nansen charts, both as a sanity check and to potentially add to our app. I first decided to work on the overall user summaries. This gave me two plots, one for users per day and one for the cumulative number of users over time.
+
+```{r}
+df["date"] = anydate(df$timestamp)
+unique_users <- df %>%
+  group_by(date)%>%
+  summarise(num_users = n_distinct(user))
+ggplot(unique_users) + geom_line(aes(x = date, y = num_users))+
+  ggtitle("Number of Unique Users Active Per Day")+
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%y")+
+  geom_ma(n = 30, aes(x=date, y = num_users, colour = "7 Day Average"))
+```
+
+```{r}
+cum_users <- df.weekly %>%
+  select(timefirst, user)
+cum_users <- cum_users %>%
+  count(timefirst)
+cum_users <- cum_users %>% 
+  mutate(cum = cumsum(n))
+ggplot(cum_users) + geom_line(aes(x = timefirst, y = cum))+
+  ggtitle("Total AAVE Users Over Time")+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  labs(x = "Date", y = "Number of Users")
+```
+
+These graphs both do a good job of showing how AAVE has progressed over time. Although the number of active users per day does not appear to be increasing, we see a constant increase in new users. This means that AAVE is still doing a good job of attracting new customers, but does not see as much activity per user as they used to.
+
+## Transactions By Coin
+
+Now, I moved into the more exciting work. Jason and I were looking to build a coin analysis page in our app, but we needed visualizations to do it. First, I wanted to look at the relationship between deposits and redeems over time. Before I look at individual coins, let's look at the overall picture.
+
+```{r}
+all_deposits <- df %>%
+  filter(type == "deposit") %>%
+  group_by(date) %>%
+  summarise(value = sum(amountUSD))
+all_redeems <- df %>%
+  filter(type == "redeem") %>%
+  group_by(date) %>%
+  summarise(value = sum(amountUSD))
+ggplot() + 
+  geom_line(data = all_deposits, aes(x = date, y = value, color = "Deposit"))+
+  geom_line(data = all_redeems, aes(x = date, y = value, color = "Redeem"))+
+  scale_color_manual(name = "Transaction Type", values = c("Redeem" = "red", "Deposit" = "blue"))+
+  scale_y_continuous(labels = comma)+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  ggtitle("Daily Amount Deposited/Redeemed")+
+  xlab("Date")+
+  ylab("Amount (USD)")
+```
+
+We can see that they usually move together, although there are a few occasions where one of them jumps without the other. However, without seeing the number of transactions as well, we cannot tell if these are simply a few large transactions or many small ones. Next, I will show this same chart, but specified by individual coin.
+
+```{r}
+top_10_graphs <- df %>% 
+  add_count(reserve) %>% 
+  filter(dense_rank(-n) <= 10 & (type == "deposit" | type == "redeem"))
+deposits <- top_10_graphs %>%
+  filter(type == "deposit") %>%
+  group_by(date, reserve) %>%
+  summarise(value = sum(amountUSD), reserve = reserve)
+redeems <- top_10_graphs %>%
+  filter(type == "redeem") %>%
+  group_by(date, reserve) %>%
+  summarise(value = sum(amountUSD), reserve = reserve)
+deposits <- distinct(deposits, date, reserve, .keep_all= TRUE)
+redeems <- distinct(redeems, date, reserve, .keep_all= TRUE)
+ggplot() + 
+  geom_line(data = deposits, aes(x = date, y = value, color = "Deposit"))+
+  geom_line(data = redeems, aes(x = date, y = value, color = "Redeem"))+
+  scale_color_manual(name = "Transaction Type", values = c("Redeem" = "red", "Deposit" = "blue"))+
+  scale_y_continuous(labels = comma)+
+  facet_wrap(~ reserve)+
+  ggtitle("Daily Amount Deposited/Redeemed")+
+  xlab("Date")+
+  ylab("Amount (USD)")
+```
+
+This shows us the same chart, but for the top 10 most used coins in the dataset. This gives us a better scale of what makes up the total transactions and shows how certain coins (WETH & USDC) make up most of our last chart. We can do the same thing with other transactions, but that is not needed to be shown here. Next, I'll move on to what I mentioned above about showing both transaction amounts and counts on the same chart to get a better understanding of user activity.
+
+## Dual-Axis Charts
+
+I'll only show it for two transaction types, but this code can be easily applied to all of them. Let's first look at deposits, and then borrows.
+
+```{r}
+all_deposits <- df %>%
+  filter(type == "deposit") %>%
+  group_by(date) %>%
+  summarise(value = sum(amountUSD), count = n())
+all_borrows <- df %>%
+  filter(type == "borrow") %>%
+  group_by(date) %>%
+  summarise(value = sum(amountUSD), count = n())
+all_redeems <- df %>%
+  filter(type == "redeem") %>%
+  group_by(date) %>%
+  summarise(value = sum(amountUSD), count = n())
+x <- mean(all_deposits$value) / mean(all_deposits$count)
+
+ggplot(all_deposits, aes(x = date))+ 
+  geom_line(aes(y = value, colour = "Amount"))+
+  geom_line(aes(y = count*x, colour = "# Transactions"))+
+# Sec.Axis adds the second axis, the rest is all formatting
+  scale_y_continuous(labels = comma, sec.axis = sec_axis(~./x, name = "# of Deposits"))+
+  scale_colour_manual(values = c("blue", "red"))+
+  labs(y = "Amount (USD)",x = "Month",colour = "Parameter")+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  theme(legend.position = c(0.9, 0.9))+
+  ggtitle("Deposits Summary")
+x <- mean(all_borrows$value) / mean(all_borrows$count)
+
+ggplot(all_borrows, aes(x = date))+ 
+  geom_line(aes(y = value, colour = "Amount"))+
+  geom_line(aes(y = count*x, colour = "# Transactions"))+
+  scale_y_continuous(labels = comma, sec.axis = sec_axis(~./x, name = "# of Borrows"))+
+  scale_colour_manual(values = c("blue", "red"))+
+  labs(y = "Amount (USD)",x = "Month",colour = "Parameter")+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  theme(legend.position = c(0.9, 0.9))+
+  ggtitle("Borrows Summary")
+```
+
+These both seem to show the same trend. Transactions counts have stayed fairly steady over time, whereas the amounts have swung much wider. It appears the the average transaction amount has increased over time (we could also plot that). However, the biggest part of this is that is shows the benefit of having more than one axis, so that we can better compare data of different scales.
+
+## Coin Utilization
+
+That concept will be used when showing our estimated utilization rate. Utilization Rate is very important because it determines the borrow rate for each coin. Every coin has an optimal utilization that can be very different. These optimal rates can be found on https://docs.aave.com/risk/liquidity-risk/borrow-interest-rate. First let's look at how we can try to model and graph utilization for one coin, in this case USDT.
+
+```{r}
+coins <- "USDT"
+dates <- as.data.frame(unique(df$date))
+colnames(dates) <- c("date")
+# We want all different transaction types by coin, liquidation is tricky
+coin <- df %>%
+  filter(reserve == coins)
+dep<- coin %>%
+  filter(type == "deposit") %>%
+  group_by(date) %>%
+  summarise(date = date, deposit_amount = cumsum(sum(amount)))%>%
+  distinct()
+red<-coin %>%
+  filter(type == "redeem") %>%
+  group_by(date) %>%
+  summarise(date= date, redeem_amount = cumsum(sum(amount)))%>%
+  distinct()
+rep <- coin %>%
+  filter(type == "repay") %>%
+  group_by(date) %>%
+  summarise(date = date, repay_amount = cumsum(sum(amount)))%>%
+  distinct()
+bor <- coin %>%
+  filter(type == "borrow") %>%
+  group_by(date) %>%
+  summarise(date = date, borrow_amount = cumsum(sum(amount)))%>%
+  distinct()
+
+util_summary <- dates %>% left_join(dep, by = "date")
+util_summary <- util_summary %>% left_join(red, by = "date")
+util_summary <- util_summary %>% left_join(rep, by = "date")
+util_summary <- util_summary %>% left_join(bor, by = "date")
+util_summary[is.na(util_summary)] <- 0
+util_summary <- util_summary %>%
+  arrange(date)
+util_summary$cum_deposit <- cumsum(util_summary$deposit_amount)
+util_summary$cum_redeem <- cumsum(util_summary$redeem_amount)
+util_summary$cum_borrow <- cumsum(util_summary$borrow_amount)
+util_summary$cum_repay <- cumsum(util_summary$repay_amount)
+util_summary$all_money <- util_summary$cum_deposit - util_summary$cum_redeem
+
+# Best attempt at approximating utilization ratio
+util_summary$rate <- round((util_summary$cum_borrow) / (util_summary$all_money +util_summary$cum_repay) *100,2)
+util_summary[is.na(util_summary)] <- 0
+# https://docs.aave.com/risk/liquidity-risk/historical-utilization
+ggplot(util_summary)+
+  geom_line(aes(x = date, y = rate))+
+    scale_x_date(date_breaks = "1 month", date_labels = "%b-%y")+
+    ggtitle(paste(coins,  "Utilization Summary"))
+```
+
+We can see how this is heavily utilized. This makes sense because the optimal utilization on AAVE is 90%. Let's see how this compares.
+
+```{r}
+mean(util_summary$rate)
+```
+
+This is fairly close to the desired rate. However, it does not actually visualize how the coin is being used. For that I used the dual-axis technique from the last section to show different transaction types as well. 
+
+```{r}
+x <- max(util_summary$all_money) / max(util_summary$rate)
+
+ggplot(util_summary, aes(x = date))+ 
+  geom_line(aes(y = all_money, colour = "Overall Liquidity"))+
+  geom_line(aes(y = cum_deposit, colour = "Total Deposits"))+
+  geom_line(aes(y = cum_redeem, colour = "Total Redeems"))+
+  geom_line(aes(y = cum_borrow - cum_repay, colour = "Outstanding Borrows")) +
+  geom_line(aes(y = rate*x, colour = "Utilization Rate"))+
+  scale_y_continuous(labels = comma, sec.axis = sec_axis(~./x, name = "Utilization Rate (%)"))+
+  scale_colour_manual(values = c("blue", "dark green", "orange", "purple", "red"))+
+  labs(y = paste("Amount", coins),x = "Month",colour = "Parameter")+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  ggtitle(paste(coins,  "Utilization Summary"))
+```
+
+This is able to give us a lot more information about the coin while also showing what my utilization rate is representing. Also not included, but will be better seen on Monday, is how this chart differs between stable and not stable coins. Aaron's done a good job in separating them and that will soon be included in this. Next, I make a dataframe for every coin in our dataframe that gathers all of this data and makes it easier to plot.
+
+```{r, message=FALSE, warning= FALSE}
+coins <- unique(df$reserve)
+dates <- as.data.frame(unique(df$date))
+colnames(dates) <- c("date")
+util_summary <- as.Date(dates$date)
+util_summary <- as.data.frame(util_summary)
+colnames(util_summary) <- c("date")
+util_summary <- util_summary %>%
+    arrange(date)
+#Similar code for above but it works for more than one coin by changing column names
+for (coin in coins) {
+  coin.df <- df %>%
+    filter(reserve == coin)
+  dep <- coin.df %>%
+    filter(type == "deposit") %>%
+    group_by(date) %>%
+    summarise(date = date, deposit_amount = cumsum(sum(amount)))%>%
+    distinct()
+  red<-coin.df %>%
+    filter(type == "redeem") %>%
+    group_by(date) %>%
+    summarise(date= date, redeem_amount = cumsum(sum(amount)))%>%
+    distinct()
+  rep <- coin.df %>%
+    filter(type == "repay") %>%
+    group_by(date) %>%
+    summarise(date = date, repay_amount = cumsum(sum(amount)))%>%
+    distinct()
+  bor <- coin.df %>%
+    filter(type == "borrow") %>%
+    group_by(date) %>%
+    summarise(date = date, borrow_amount = cumsum(sum(amount)))%>%
+    distinct()
+  util_summary <- util_summary %>% left_join(dep, by = "date")
+  util_summary <- util_summary %>% left_join(red, by = "date")
+  util_summary <- util_summary %>% left_join(rep, by = "date")
+  util_summary <- util_summary %>% left_join(bor, by = "date")
+  util_summary[is.na(util_summary)] <- 0
+
+  util_summary$cum_deposit <- cumsum(util_summary$deposit_amount)
+  util_summary$cum_redeem <- cumsum(util_summary$redeem_amount)
+  util_summary$cum_borrow <- cumsum(util_summary$borrow_amount)
+  util_summary$cum_repay <- cumsum(util_summary$repay_amount)
+  util_summary$all_money <- util_summary$cum_deposit - util_summary$cum_redeem
+  util_summary$rate <- round((util_summary$cum_borrow) / (util_summary$all_money +util_summary$cum_repay) *100,2)
+  # Change all the column names to include coin
+  colnames(util_summary)[which(names(util_summary)== "deposit_amount")] <- paste(coin, "_dep", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "redeem_amount")] <- paste(coin, "_red", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "repay_amount")] <- paste(coin, "_rep", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "borrow_amount")] <- paste(coin, "_bor", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "cum_deposit")] <- paste(coin, "_c_dep", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "cum_redeem")] <- paste(coin, "_c_red", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "cum_repay")] <- paste(coin, "_c_rep", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "cum_borrow")] <- paste(coin, "_c_bor", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "all_money")] <- paste(coin, "_all", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "rate")] <- paste(coin, "_rate", sep = '')
+  head(util_summary)
+}
+util_summary[is.na(util_summary)] <- 0
+#Just shows example for the first two coins
+head(util_summary[,1:21])
+```
+
+This data frame will be very useful because it allows us to make plots that are less reactive. Here's an example of that.
+
+```{r}
+utils <- util_summary[grepl('_rate', colnames(util_summary))]
+utils["date"] = util_summary$date
+# Reshape package makes it easier to plot
+utils <- melt(utils, id.vars = "date")
+ggplot(utils, aes(date, y = value, color = variable))+
+  geom_line()
+```
+
+This shows the utilization rate of every coin in our dataset over time. Although it is not overly useful by itself, it does show the wide range that represents the different usages for every coin. This can be easily adapted into a function that when provided with a list of coins quickly plots their utilization. I believe this can be a very useful tool moving forward. For next week, I am looking to have summary plots for each type of coin that we have found, while also continuing to improve upon my utilization model.
+
+## Appendix
+
+Some more visualizations and work on clusters and potential smart contract activity can be found in paquic-Assignment6-f21.Rmd on github.
