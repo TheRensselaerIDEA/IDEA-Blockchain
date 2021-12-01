@@ -4,11 +4,11 @@ subtitle: "DAR Assignment 6"
 author: "Kaiwen Min"
 date: "09/01/2021"
 output:
+  pdf_document: default
   html_document:
     toc: true
     number_sections: true
     df_print: paged
-  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -307,6 +307,7 @@ ggplot(df.1user) +
   theme(
            axis.text.x=element_blank(),
            axis.ticks.x=element_blank())+facet_grid(rows = df.1user$user_alias)
+
 
 
 ```
