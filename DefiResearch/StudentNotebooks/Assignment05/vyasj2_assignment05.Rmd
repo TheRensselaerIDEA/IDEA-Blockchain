@@ -1,6 +1,8 @@
 ---
 title: "vyasj2 Homework5"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -144,6 +146,7 @@ ggplot(wethBorrowLiquids,aes(x=as.Date(date),y=priceDiff)) +
   ylab("Price Difference")
 ```
 
+
 ```{r}
 # Regular Survival Analysis
 
@@ -160,7 +163,7 @@ km2 <- with(wethBorrowLiquids,Surv(timeDiff,status))
 head(km2,25)
 km_fit_brm <- survfit(Surv(timeDiff,status) ~ borrowRateMode, data=wethBorrowLiquids)
 summary(km_fit_brm, times = c(1,30,60,90*(1:10)))
-ggsurvplot(km_fit_brm, conf.int = TRUE, xlim = c(0,300), ylim = c(0.84,1)) + 
+ggsurvplot(km_fit_brm, conf.int = TRUE, xlim = c(0,300), ylim = c(0.84,1),break.time.by=25) + 
   ggtitle("Survival Probability of Borrow Until Liquidation Over Time By Borrow Rate Mode (max. 300 Days)")
 ```
 

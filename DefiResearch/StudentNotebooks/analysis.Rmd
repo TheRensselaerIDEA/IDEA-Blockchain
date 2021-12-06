@@ -55,6 +55,10 @@ if (!require("zoo")) {
   install.packages("zoo")
   library(zoo)
 }
+if (!require("plotly")) {
+  install.packages("plotly")
+  library(plotly)
+}
 ```
 
 ```{r}
@@ -245,3 +249,93 @@ ggplot(roll_borrows_variable, aes(x=as_datetime(timestamp),y=rollingAvg21)) + ge
 Regardless of whether or not you liquidate, the 21-day average looks roughly the same. Maybe Borrow Rate doesn't affect Liquidation?
 
 rate of liquidation vs coin instability
+
+```{r}
+updated_df <- read_rds("../Data/transactionsv2.rds")
+updated_df
+```
+
+Rate of Liquidation over time calculation: rolling average of liquidations
+Coin Instability calculation: reserve price over time
+
+```{r}
+uborrows <- updated_df %>%
+  filter(type=="borrow")
+
+uliquidations <- updated_df %>%
+  filter(type=="liquidation")
+
+uprices <- updated_df %>%
+  select(reserve,timestamp,reservePriceUSD)
+```
+
+```{r}
+uprices_big3 <- uprices %>%
+  filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI")
+
+ggplot(uprices_big3,aes(x=as_datetime(timestamp),y=reservePriceUSD,color=reserve)) + geom_point()
+```
+
+```{r}
+uprices_usdc <- uprices_big3 %>%
+  filter(reserve=="USDC")
+
+uprices_dai <- uprices_big3 %>%
+  filter(reserve=="DAI")
+
+roll_uprices_usdc <- uprices_usdc %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg=zoo::rollmean(reservePriceUSD,k=7,fill=NA))
+
+ggplot(roll_uprices_usdc,aes(x=as_datetime(timestamp),y=rollingAvg)) + geom_point()
+
+roll_uprices_dai <- uprices_dai %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg7=zoo::rollmean(reservePriceUSD,k=7,fill=NA))
+```
+
+```{r}
+roll_uprices <- uprices %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg=zoo::rollmean(reservePriceUSD,k=7,fill=NA))
+
+ggplot(roll_uprices,aes(x=as_datetime(timestamp),y=rollingAvg)) + geom_line() + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
+```
+
+```{r}
+roll_uprices %>%
+  dplyr::mutate(day=format(as.Date(roll_uprices$timestamp), format="%d")) %>%
+  dplyr::mutate(month=format(as.Date(roll_uprices$timestamp), format="%m"))
+
+head(roll_uprices)
+```
+
+```{r}
+stable.borrows <- borrows %>%
+  dplyr::filter(borrowRateMode=="Stable") %>%
+  dplyr::filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI") %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA))
+
+variable.borrows <- borrows %>%
+  dplyr::filter(borrowRateMode=="Variable") %>%
+  dplyr::filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI") %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA))
+
+ggplot(stable.borrows, aes(x=as.Date(date),y=rollingAvg21)) + 
+  geom_line() +
+  scale_x_date(date_labels="%m-%y") + 
+  xlab("Date") +
+  ylab("Borrow Rate") +
+  ggtitle("21-Day Rolling Average Stable Borrow Rate of USDC, USDT, and DAI")
+
+ggplot(variable.borrows, aes(x=as.Date(date),y=rollingAvg21)) + 
+  geom_line() +
+  scale_x_date(date_labels="%m-%y") + 
+  xlab("Date") +
+  ylab("Borrow Rate") +
+  ggtitle("21-Day Rolling Average Variable  Borrow Rate of USDC, USDT, and DAI")
+```
+
+

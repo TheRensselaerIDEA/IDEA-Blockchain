@@ -73,6 +73,10 @@ if (!require(lubridate)) {
   install.packages("lubridate")
   library("lubridate")
 }
+if (!require(kableExtra)) {
+  install.packages("kableExtra")
+  library("kableExtra")
+}
 ```
 
 Then, we load the data:
@@ -115,22 +119,22 @@ It's immediately visible that the price of WETH is very highly volatile, because
 
 ```{r}
 borrows <- df %>%
-  dplyr::filter(type=="borrow")
+  dplyr::filter(type=="borrow") %>%
+  dplyr::rename(name=onBehalfOf_alias)
 
 liquidations <- df %>%
-  dplyr::filter(type=="liquidation")
+  dplyr::filter(type=="liquidation") %>%
+  dplyr::rename(name=user_alias)
 
 wethLiquids <- liquidations %>%
   dplyr::filter(principalReserve=="WETH") %>%
-  dplyr::select(user_alias,date,timestamp,type,liquidator,collateralAmount,collateralReserve,reservePriceUSDCollateral,principalAmount,principalReserve,reservePriceUSDPrincipal) %>%
-  dplyr::rename(user=user_alias)
+  dplyr::select(name,date,timestamp,type,liquidator,collateralAmount,collateralReserve,reservePriceUSDCollateral,principalAmount,principalReserve,reservePriceUSDPrincipal)
 
 wethBorrows <- borrows %>% 
   dplyr::filter(reserve=="WETH") %>%
-  dplyr::select(onBehalfOf_alias,date,reservePriceUSD,timestamp,borrowRateMode,type) %>%
-  dplyr::rename(user=onBehalfOf_alias)
+  dplyr::select(name,date,reservePriceUSD,timestamp,borrowRateMode,type)
 
-wethBorrowLiquids <- left_join(wethBorrows,wethLiquids,by="user") %>%
+wethBorrowLiquids <- left_join(wethBorrows,wethLiquids,by="name") %>%
   dplyr::rename(borrowDate=date.x) %>%
   dplyr::rename(liquidationDate=date.y) %>%
   dplyr::mutate(date=case_when(is.na(liquidationDate) ~ borrowDate, TRUE ~ liquidationDate)) %>%
@@ -213,4 +217,77 @@ As can be seen above, the first graph shows all liquidations that had WETH as th
 # Next Steps
 
 My next steps are to dive deeper into the story of WETH and how it is transacted on the AAVE platform, as well as perform more survival analysis so that users who utilize the app can have the best chance of performing a safe borrow and not have to worry about liquidation. 
+
+```{r}
+wethSurvivalData <- left_join(wethBorrows,wethLiquids,by="name") %>%
+  dplyr::rename(borrowDate=date.x) %>%
+  dplyr::rename(liquidationDate=date.y) %>%
+  dplyr::mutate(age=case_when(is.na(timestamp.y) ~ max(wethBorrows$timestamp)/86400,
+                              TRUE ~ (timestamp.y-timestamp.x)/86400)) %>%
+  dplyr::mutate(status=case_when(age==max(wethBorrows$timestamp)/86400 ~ 0,
+                                 TRUE ~ 1)) %>%
+  dplyr::filter(age>=0) %>%
+  dplyr::select(name,age,status,borrowRateMode,collateralReserve)
+
+km_fit <- survfit(Surv(age, status) ~ 1, data=wethSurvivalData)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
+ggsurvplot(km_fit,conf.int=TRUE,xlim=c(0,250),ylim=c(0.87,1),break.time.by=25) +
+  xlab("Time (Days)") +
+  ggtitle("Survival of WETH Borrow until Liquidation")
+
+km_fit_brm <- survfit(Surv(age, status) ~ borrowRateMode, data=wethSurvivalData)
+summary(km_fit_brm, times = c(1,30,60,90*(1:10)))
+ggsurvplot(km_fit_brm,conf.int=TRUE,xlim=c(0,250),ylim=c(0.87,1),break.time.by=25) +
+  xlab("Time (Days)") +
+  ggtitle("Survival of WETH Borrow until Liquidation by Borrow Rate Mode")
+
+km_fit_cr <- survfit(Surv(age, status) ~ collateralReserve, data=wethSurvivalData %>%
+                       dplyr::filter(collateralReserve %in% 
+                                       #c("USDC","DAI","WBTC","LINK","WETH")))
+                                       c("AAVE","LINK","XSHUSHI")))
+summary(km_fit_cr, times = c(1,30,60,90*(1:10)))
+ggsurvplot(km_fit_cr,legend.title="Collateral",legend.labs=c("AAVE","LINK","XSHUSHI")) +
+  xlab("Time (Days)") +
+  ggtitle("Survival of WETH Borrow until Liquidation by Collateral Reserve")
+
+weth.surv.medians <- surv_median(km_fit_cr) %>%
+  dplyr::arrange(median)
+
+kable(weth.surv.medians)
+
+weth.cox <- coxph(Surv(age, status) ~ collateralReserve, data=wethSurvivalData)
+summary(weth.cox)
+```
+
+```{r}
+allSurvivalData <- left_join(borrows,liquidations,by="name") %>%
+  dplyr::mutate(age=case_when(is.na(timestamp.y) ~ max(borrows$timestamp)/86400,
+                              TRUE ~ (timestamp.y-timestamp.x)/86400)) %>%
+  dplyr::mutate(status=case_when(age==max(borrows$timestamp)/86400 ~ 0,
+                                 TRUE ~ 1)) %>%
+  dplyr::filter(age>=0) %>%
+  dplyr::rename(collateralReserve=collateralReserve.y) %>%
+  dplyr::rename(borrowRateMode=borrowRateMode.x) %>%
+  dplyr::select(name,age,status,collateralReserve,borrowRateMode)
+
+km_fit_all <- survfit(Surv(age, status) ~ 1, data=allSurvivalData)
+summary(km_fit_all, times = c(1,30,60,90*(1:10)))
+ggsurvplot(km_fit_all,conf.int=TRUE,xlim=c(0,250),ylim=c(0.3,1),break.time.by=25) +
+  xlab("Time (Days)") +
+  ggtitle("Survival of Borrow until Liquidation")
+
+km_fit_brm_all <- survfit(Surv(age, status) ~ borrowRateMode, data=allSurvivalData)
+summary(km_fit_brm_all, times = c(1,30,60,90*(1:10)))
+ggsurvplot(km_fit_brm_all,conf.int=TRUE,xlim=c(0,21),ylim=c(0.87,1),break.time.by=1) +
+  xlab("Time (Days)") +
+  ggtitle("Survival of Borrow until Liquidation by Borrow Rate Mode")
+
+km_fit_cr_all <- survfit(Surv(age, status) ~ collateralReserve, data=allSurvivalData %>%
+                           dplyr::filter(collateralReserve %in% c("LINK","WBTC","WETH")))
+summary(km_fit_cr_all, times = c(1,30,60,90*(1:10)))
+ggsurvplot(km_fit_cr_all) +
+  xlab("Time (Days)") +
+  ggtitle("Survival of Borrow until Liquidation by Collateral Reserve")
+```
+
 
