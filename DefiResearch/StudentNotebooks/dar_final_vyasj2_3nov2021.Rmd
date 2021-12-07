@@ -1,0 +1,97 @@
+---
+title: "MATP-4910  Final Project Notebook Draft"
+author: "Jaimin Vyas"
+date: "Due 3 November 2021"
+output:
+  html_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+subtitle: "DAR Project (One of: DeFi, Match2, Eat4Genes)"
+---
+
+# Final Project: Github Info
+
+* github repository: https://github.rpi.edu/DataINCITE/IDEA-Blockchain
+* Your github ID: vyasj2
+* Final notebook: dar_final_vyasj2_3nov2021.Rmd
+    
+* Summary of github contributions including github issues addressed.
+
+    * Include browsable links to all external files on github
+    * Include links to shared Shiny apps
+    * Include list of github issues addressed. 
+    * A detailed summary of branches is not required for the final report
+    
+* List of presentations,  papers, or other outputs
+
+    * Include browsable links!
+    
+* List of references (if necessary) 
+* Indicate any use of group shared code base
+* Indicate which parts of your described work were done by you or as part of joint efforts
+
+# Overview & Problems Tackled
+
+*Provide a top-level summary of your work and findings.*
+
+# Data Description
+
+*Include data sources/locations, versions/dates, etc.. Indicate the size of your data - how many data points, how many features etc.   If you spent time preparing data, you can discuss it here as a subsection or if appropriate put in methods.* 
+
+# Results
+
+*Break out your results by each problem you attacked. Note that if you spent lots of time on Eat4Genes preparing data and haven't thought about, then write up case studies for using the app. *
+
+## Problem 1 
+
+*Describe the problem you are examining.  If there is background that is necessary for this problem, then put it here. Include any references.* 
+
+ 
+### Methods
+
+*How did you address the problem? What data did you use exactly? What methods did you use?* 
+
+	
+### Results
+
+*What were the results on this problem?*
+
+
+### Discussion
+
+*Interpret results.  What were your findings?  What do they say about in terms of the original domain (e.g. DeFi or health eating)?   What are the strengths and limitations of these results? Is there support for your findings from other sources? Include references as appropriate.*
+
+## Problem 2
+ 
+### Methods
+	
+### Results
+
+### Discussion
+
+*Do at least 2 problems. Add more as necessary *
+
+
+# Summary and Recommendations
+
+* Overall, what insights did you find  about (DeFi, Eat-4-genes) in your analysis?    
+
+* What recommendations do you have for future work for  future studies, Data utilization, Analytics, Visualizations, User interface design, New features, etc.
+    + Would you recommend that your analysis be included in an expanded app or paper?  Why or Why not?  
+    + If not, is there additional work that might  improve the results?  Note that it is perfectly okay for you to recommend to not to include your analysis. Research doesn't always work out.  As a team we need to try a lot of different ideas in hopes of finding a few good ones to pursue.  *
+
+* Think of yourself as a consultant reporting back on a particular aspect of the analysis and application design!*
+
+# References
+
+*Include any references to literature in support of your work*
+*You might also wish to include references to unusual R packages essential to your work*
+
+# Appendix
+
+*Include here whatever you think is relevant to support the main content of your notebook. For example, you may have only include example figures above in your main text but include additional ones here* 
+
+
+
+

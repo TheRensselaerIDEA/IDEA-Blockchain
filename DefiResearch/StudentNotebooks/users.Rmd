@@ -1,38 +1,22 @@
 ---
-title: "DeFi Example Notebook: AAVE Users"
-subtitle: "AAVE Users Analysis"
-author: "Data Analytics Research Instructors"
-date: "08/27/2021"
-output:
-  html_document:
-    toc: true
-    number_sections: true
-    df_print: paged
-  pdf_document: default
+title: "R Notebook"
+output: html_notebook
 ---
-
-
-```{r setup, include=FALSE}
-# Set the default CRAN repository
-local({r <- getOption("repos")
-       r["CRAN"] <- "http://cran.r-project.org" 
-       options(repos=r)
-})
-
-# Set code chunk defaults
-knitr::opts_chunk$set(echo = TRUE)
-
-
-# Load required packages; install if necessary
-# CAUTION: DO NOT interrupt R as it installs packages!!
+```{r}
+#import libraries
 if (!require("ggplot2")) {
   install.packages("ggplot2")
   library(ggplot2)
 }
 
-if (!require("gplots")) {
-  install.packages("gplots")
-  library(gplots)
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dplyr)
 }
 
 if (!require("RColorBrewer")) {
@@ -55,50 +39,49 @@ if (!require("xts")) {
   install.packages("xts")
   library(xts)
 }
-if (!require("foreach")) {
-  install.packages("foreach")
-  library(foreach)
+if (!require("devtools")) {
+  install.packages("devtools")
+  library(devtools)
 }
-if (!require("doParallel")) {
-  install.packages("doParallel")
-  library(doParallel)
+if (!require("ggbiplot")) {
+  install_github("vqv/ggbiplot")
+  library(ggbiplot)
 }
-
-
 ```
-
-# DeFi User Analysis
-
-## Prepare Transaction Data
-
-We begin by loading our prepared AAVE transaction data into a dataframe. The dataset has over 400,000 rows, and 27 columns. 
-
-We are directly loading the dataframe from an Rds archive instead of a CSV file to conserve space. 
-
+We begin by loading the csv file in to a dataframe.
 ```{r}
+<<<<<<< HEAD
 #load Rds (binary version of csv file) into dataframe
 df<-readRDS('../Data/transactions.Rds')
 
 # Let's take a quick look 
+=======
+#load in csv file to data frame
+df<-read_rds('../Data/transactions.Rds')
+>>>>>>> 449e7f225086a558f13f0699c8afffb897e4cf44
 head(df)
-
 ```
-
 We reformat the dataframe so that each row represents a user, and the columns represent a summarization of the user's transaction history. 
-
 ```{r}
 #group by user and get time of user's first and last transaction, as well as number of transactions
-df.users<- df%>%group_by(user)%>%
+df.users<- df%>%
+  group_by(user)%>%
   summarise(timefirst=min(timestamp), timelast=max(timestamp), N=n())
-
 #get the time the user has been active
 df.users$timeactive<-df.users$timelast-df.users$timefirst
+<<<<<<< HEAD
 
+=======
+>>>>>>> 449e7f225086a558f13f0699c8afffb897e4cf44
 #get log amounts for columns
 df$logUSD<-log(df$amountUSD)
 df$logCollateralUSD<-log(df$amountUSDCollateral)
 #get user's transaction information
+<<<<<<< HEAD
 for(Type in unique(df$type)){
+=======
+for(Type in (unique(df$type))){
+>>>>>>> 449e7f225086a558f13f0699c8afffb897e4cf44
   #filter for only transactions of certain type
   df.type <-filter(df%>%group_by(user)%>%
                      count(type),type==Type)
@@ -121,69 +104,56 @@ for(Type in unique(df$type)){
   df.users[paste("prop_",Type,sep='')]<-(df.users[ntypes]+.05)/((df.users$N)+.3)
   df.users[paste("weekly_",Type,sep='')]<-df.users[ntypes]/(((df.users$timeactive)+1)/(3600*24*7))
 }
-
 df.users
 ```
-
-## Creating Clusters
-
 Next, we select only the columns we wish to cluster on.
-
 ```{r}
 #subset only columns we wish to scale by removing columns that we will not cluster on
+<<<<<<< HEAD
 df.sub<-select(df.users,-c(user,timefirst,timelast,nborrow,nrepay,nswap,nliquidation,nredeem,ndeposit,N))
 
+=======
+df.sub<-select(df.users,-c(user,timefirst,timelast,mean_liquidation,nborrow,nrepay,nswap,nliquidation,nredeem,ndeposit,N,mean_swap))
+>>>>>>> 449e7f225086a558f13f0699c8afffb897e4cf44
 #repalce missing values as 0's
 df.sub<-df.sub%>%replace(is.na(.),0)
 ```
-
 We scale the data to prepare for PCA.
-
 ```{r}
 #scale data
 df.scaled<-df.sub%>%mutate_all(scale)
 df.scaled
 ```
-
 Now, we perform PCA on the scaled data. 
-
 ```{r}
 #perform pca on data
 my.pca<-prcomp(df.scaled,retx=TRUE,center=FALSE,scale=FALSE) # Run PCA and save to my.pca
+<<<<<<< HEAD
 
+=======
+>>>>>>> 449e7f225086a558f13f0699c8afffb897e4cf44
 #make scree plot
 plot(my.pca, type="line")
-
 #summary of pca
 summary(my.pca)
-
 ncomps=5
 ```
-
-
 Next, we plot a heatmap to show the makeups of the principal components. 
-
 ```{r}
 V <- t(my.pca$rotation[,1:ncomps]) # We transpose to make the principal components be rows
 heatmap.2(V, main='Principal Components', cexRow=0.75, cexCol=0.75, scale="none", dendrogram="none",
 Colv= FALSE, Rowv=FALSE, tracecol=NA,density.info='none')
-
 ```
-
 Finally, we run the kmeans clustering algorithm on the data. We select the number of clusters euqal to the number of selected components. 
-
 ```{r}
 #run kmeans algorithm
 pca.matrix<-my.pca$x[,1:ncomps]
 set.seed(1)
-km <-kmeans(pca.matrix, ncomps)
-
+km <-kmeans(df.scaled,6)
 #plot frequencies of each cluster
-barplot(table(km$cluster),main="Cluster Frequencies")
+barplot(table(km$cluster),main="Kmeans Cluster Size")
 ```
-
 Finally, we view the centers of the kmeans clusters.
-
 ```{r}
 #make heatmap of cluster centers
 heatmap.2(km$centers,
@@ -194,9 +164,7 @@ cexCol=1.0,
 main = "Kmeans Cluster Centers",
 trace ="none")
 ```
-
 # Exploring the Influential Factors with a Biplot 
-
 ```{r,fig.width=16,fig.height=8}
 plot1<-ggbiplot(my.pca,choices=c(1,2),
   labels=rownames(df.scaled), #show point labels
@@ -205,6 +173,15 @@ plot1<-ggbiplot(my.pca,choices=c(1,2),
   obs.scale=1,
   groups=as.factor(km$cluster)) +
   ggtitle("User Data Projected on PC1 and PC2 ")
-
 plot1
 ```
+
+```{r}
+means_borrow_df <- transactions %>% 
+  filter(type=="borrow") %>%
+  select(reserve,amount,borrowRate,borrowRateMode,type,amountUSD) %>%
+  summarise(mean_usd=mean(amountUSD),mean_count=mean(amount),mean_borrow_rate=mean(borrowRate))
+
+print(means_borrow_df)
+```
+
