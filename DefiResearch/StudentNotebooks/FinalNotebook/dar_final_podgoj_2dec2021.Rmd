@@ -71,11 +71,11 @@ Branch Name: dar-podgoj
 
 Files on GitHub:
 
-[podgoj_final_notebook.Rmd](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/DefiResearch/StudentNotebooks/FinalPresentation/dar_final_podgoj_2dec2021.Rmd)
+[podgoj_final_notebook.Rmd](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/DefiResearch/StudentNotebooks/FinalNotebook/dar_final_podgoj_2dec2021.Rmd)
 
-[podgoj_final_notebook.pdf](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/DefiResearch/StudentNotebooks/FinalPresentation/dar_final_podgoj_2dec2021.pdf)
+[podgoj_final_notebook.pdf](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/DefiResearch/StudentNotebooks/FinalNotebook/dar_final_podgoj_2dec2021.pdf)
 
-[podgoj_final_notebook.html](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/DefiResearch/StudentNotebooks/FinalPresentation/dar_final_podgoj_2dec2021.html)
+[podgoj_final_notebook.html](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/DefiResearch/StudentNotebooks/FinalNotebook/dar_final_podgoj_2dec2021.html)
 
 [app.R](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/app/app.R)
 
