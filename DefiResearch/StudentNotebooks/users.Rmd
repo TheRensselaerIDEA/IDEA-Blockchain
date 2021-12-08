@@ -50,8 +50,15 @@ if (!require("ggbiplot")) {
 ```
 We begin by loading the csv file in to a dataframe.
 ```{r}
+<<<<<<< HEAD
+#load Rds (binary version of csv file) into dataframe
+df<-readRDS('../Data/transactions.Rds')
+
+# Let's take a quick look 
+=======
 #load in csv file to data frame
 df<-read_rds('../Data/transactions.Rds')
+>>>>>>> 449e7f225086a558f13f0699c8afffb897e4cf44
 head(df)
 ```
 We reformat the dataframe so that each row represents a user, and the columns represent a summarization of the user's transaction history. 
@@ -62,11 +69,19 @@ df.users<- df%>%
   summarise(timefirst=min(timestamp), timelast=max(timestamp), N=n())
 #get the time the user has been active
 df.users$timeactive<-df.users$timelast-df.users$timefirst
+<<<<<<< HEAD
+
+=======
+>>>>>>> 449e7f225086a558f13f0699c8afffb897e4cf44
 #get log amounts for columns
 df$logUSD<-log(df$amountUSD)
 df$logCollateralUSD<-log(df$amountUSDCollateral)
 #get user's transaction information
+<<<<<<< HEAD
+for(Type in unique(df$type)){
+=======
 for(Type in (unique(df$type))){
+>>>>>>> 449e7f225086a558f13f0699c8afffb897e4cf44
   #filter for only transactions of certain type
   df.type <-filter(df%>%group_by(user)%>%
                      count(type),type==Type)
@@ -94,7 +109,12 @@ df.users
 Next, we select only the columns we wish to cluster on.
 ```{r}
 #subset only columns we wish to scale by removing columns that we will not cluster on
+<<<<<<< HEAD
+df.sub<-select(df.users,-c(user,timefirst,timelast,nborrow,nrepay,nswap,nliquidation,nredeem,ndeposit,N))
+
+=======
 df.sub<-select(df.users,-c(user,timefirst,timelast,mean_liquidation,nborrow,nrepay,nswap,nliquidation,nredeem,ndeposit,N,mean_swap))
+>>>>>>> 449e7f225086a558f13f0699c8afffb897e4cf44
 #repalce missing values as 0's
 df.sub<-df.sub%>%replace(is.na(.),0)
 ```
@@ -108,6 +128,10 @@ Now, we perform PCA on the scaled data.
 ```{r}
 #perform pca on data
 my.pca<-prcomp(df.scaled,retx=TRUE,center=FALSE,scale=FALSE) # Run PCA and save to my.pca
+<<<<<<< HEAD
+
+=======
+>>>>>>> 449e7f225086a558f13f0699c8afffb897e4cf44
 #make scree plot
 plot(my.pca, type="line")
 #summary of pca
