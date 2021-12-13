@@ -1,0 +1,409 @@
+---
+title: "DAR F21 Project Status Notebook"
+author: "Soumya Mishra"
+date: "11/18/2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DeFi"
+---
+
+## Weekly Work Summary	
+
+**NOTE:** Follow an outline format; use bullets to express individual points. 
+
+* RCS ID: Mishrs4
+* Project Name: Defi
+* Summary of work since last week 
+
+    I worked on analyzing the Defi Data on a Coin level. I looked at several Survival plots of the dataset divided into the     coins. I wanted to determine which coins would be the best in terms of survival. I also created a function and added it     to the github repository so others could perform survival analysis on their data sets. 
+
+* NEW: Summary of github issues added and worked 
+
+   create a notebook with survival analysis at the coin level #81
+   Survival Analysis function #87
+    
+* Summary of github commits 
+
+    I commited the generateSurvival.R file that includes the function to perform survival analysis given 2 data sets such as borrow to repay or any two transactions. This was added to the shiny app with the option to analyze various transaction data sets. 
+    The issues I resolved include:
+    - create a notebook with survival analysis at the coin level #81 
+    - Survival Analysis function #87
+
+* List of presentations,  papers, or other outputs
+
+    The Shiny app has a page with the included output of the Survival analysis graphs I had generated in my previous            notebook.
+    
+
+## Personal Contribution	
+
+I added a generate.R function that can be used by several others to output the survival analysis of users, coins, weekly data... and so forth. The file is generateSurvival.R. It is also linked below:
+```{r}
+generateSurvival <- function(start, end)
+{
+  
+  borrowRepay <- left_join(end,start,by="user") %>%
+    dplyr::rename(endTime=timestamp.x) %>%
+    dplyr::rename(startTime=timestamp.y) %>%
+    group_by(user) %>%
+    dplyr::summarise(timeDiff=case_when(min(startTime)-min(endTime)>0 ~   min(startTime)-min(endTime), TRUE ~ as.integer(21294796))) %>%
+    mutate(status=case_when(timeDiff==as.integer(21294796) ~ 0, timeDiff<=0 ~ 0, timeDiff>0 ~ 1)) %>%
+    select(user,timeDiff,status)
+  
+  km <- with(borrowRepay, Surv(timeDiff/86400, status))
+  km_fit <- survfit(Surv(timeDiff/86400, status) ~ 1, data=borrowRepay)
+  summary(km_fit, times = c(1,30,60,90*(1:10)))
+  #p1 <- ggplot(km_fit)
+  return (km_fit)
+  
+  
+}
+```
+
+I also figured out how to combine plots as displayed below. I used it to combine a survival analysis using this function for multiple data sets. I originally tried creating a separate function for this, but after researching and combing through several threads I found a new feature of ggplot that lets a list of datasets be plotted on one graph using "combine = TRUE"
+
+
+## Discussion of Primary Findings 	
+
+I wanted to find the survival of the repays of the stable coins to determine which coins would have the best transactions and highest survival in terms of amounts borrowed and repaid. I found the top coins with the highest probability of being repaid were WBTC, SUSD, and USDC in that order. The coins with a lower chance of having their pools repaid were USDT, DAI, GUSD where GUSD had the lowest survival. According to this data, it would seem WBTC would be the most likely to have a borrow repaid in comparison to other stable coins. The top stable coin is WBTC and the top non-stable coin is WETH in the second graph which compares all stable and unstable coins' survivals. Interestingly enough, the average non-stable coin has a higher survival percentage than the average stable coin. However, this data may be skewed as the dataset includes less stable coins. In any case it seems a non--stable coin is more likely to be repaid. Analyzing the dataset's survival curves across various coins gives us the following coins as likely to be repaid when having a user borrow from its pool: WBTC and WETH.
+
+In the last graph I compared the top survival coin WBTC to the lower end USDC as two coins that show a drastic difference in the survival. We can see how the USDC survival within user repay transactions curves downward while WBTC stays as an even line at a high percentage of survival. 
+
+I wanted to form a conclusive ranking of the coins based on survival analysis of the transactions within their respective DeFi pools. It is as follows: WBTC, WETH SUSD, USDC, LINK, USDT, DAI, GUSD as the top coins I analyzed. 
+
+
+As a side note, for the purposes of submitting the pdf I shortened the dataset as the pdf would not render with all the Defi data. I computed a limited number of users from the set for the purposes of knitting the file.
+
+
+
+    
+    
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+# Load required packages; install if necessary
+# CAUTION: DO NOT interrupt R as it installs packages!!
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dp)
+}
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+if (!require("plotly")) {
+  install.packages("plotly")
+  library(plotly)
+}
+if(!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+if(!require("survival")) {
+  install.packages("survival")
+  library(survival)
+}
+if(!require("survminer")) {
+  install.packages('survminer')
+  library(survminer)
+}
+if(!require("ranger")){
+  install.packages("ranger")
+  library(ranger)
+}
+if(!require("ggfortify")){
+  install.packages("ggfortify")
+  library(ggfortify)
+}
+```
+
+# Prepare Transaction Data
+
+```{r}
+#load Rds (binary version of csv file) into dataframe
+df<-read_rds('~/IDEA-Blockchain/DefiResearch/Data/transactions.Rds')
+```
+
+# Convert Data
+  
+```{r}
+loanData <- df %>%
+  filter(type == 'borrow' | type == 'repay') %>%
+  select(user, type, reserve, timestamp) %>%
+  arrange(timestamp)
+
+stableCoins <- tribble(
+ ~reserve, ~n,
+ "USDC", 105937,
+ "USDT", 58266,
+ "DAI", 55211,
+ "WBTC", 26344,
+ "SUSD", 6542,
+ "GUSD", 6009,
+ "TUSD", 3317
+)
+ammCoins <- tribble(
+  ~reserve, ~n,
+  "AmmWETH", 1778,
+  "AmmUSDC", 1405,
+  "AmmDAI", 1266,
+  "AmmUSDT", 825,
+  "AmmWBTC", 344,
+  "AmmBptBALWETH", 244,
+  "AmmBptWBTCWETH", 159,
+  "AmmUniUSDCWETH", 136,
+  "AmmUniUNIWETH",68,
+  "AmmUniWBTCWETH",57,
+  "AmmUniDAIWETH", 52,
+  "AmmUniLINKWETH", 43,
+  "AmmUniAAVEWETH", 19,
+  "AmmUniCRVWETH", 11,
+  "AmmUniWBTCUSDC", 10,
+  "AmmUniSNXWETH", 7,
+  "AmmUniRENWETH", 6,
+  "AmmUniYFIWETH", 6,
+  "AmmUniMKRWETH", 5,
+  "AmmUniBATWETH", 4,
+  "AmmUniDAIUSDC", 3
+)
+
+```
+
+
+```{r}
+loanDataKM <- data.frame(time=numeric(0), eventType = numeric(0), reserve = factor(levels = unique(df$reserve)))
+usersChecked <- 0
+timeFinal <- loanData[nrow(loanData), "timestamp"]
+loanDataTemp <- c()
+for(oneUser in loanData$user){
+  userData <- filter(loanData, user==oneUser)
+  
+  if(nrow(userData) >= 1000) next
+  
+  for(oneReserve in userData$reserve){
+    
+    if(is.na(oneReserve)) next
+    
+    userReserveData <- filter(userData, reserve==oneReserve)
+    userBorrows <- filter(userReserveData, type=="borrow")
+    userNonBorrows <- filter(userReserveData, type != "borrow")
+    
+    for(borrow in 1:nrow(userBorrows)){
+      timeOfBorrow <- userBorrows[borrow, "timestamp"]
+      
+      if(is.na(timeOfBorrow)) break
+      
+      timeOfNextAction <- 0
+      nextActionType <- 0
+      for(nextAction in 1:nrow(userNonBorrows)){
+        if(is.na(userNonBorrows[nextAction, "timestamp"])) break
+        if(userNonBorrows[nextAction, "timestamp"] >= timeOfBorrow){
+          timeOfNextAction <- userNonBorrows[nextAction, "timestamp"]
+          nextActionType <- 1
+          break;
+        }
+      }
+      timeForEvent <- timeOfNextAction - timeOfBorrow
+      if(timeForEvent < 0) timeForEvent <- timeFinal - timeOfBorrow;
+      loanDataKM[nrow(loanDataKM) + 1,] <- c(as.numeric(timeForEvent/86400), as.numeric(nextActionType), oneReserve)
+      
+    }
+  }
+  usersChecked <- usersChecked + 1
+  if(usersChecked == 150)
+    break
+}
+```
+
+
+# Survival Graphs:
+  
+  
+
+```{r}
+loanCountReserve <- loanDataKM %>%
+  count(reserve) %>%
+  arrange(-n)
+df <- df %>%
+  mutate(reserveType = if_else(reserve %in% stableCoins$reserve, "Stable", if_else(reserve %in% ammCoins$reserve, "AMM", "Non-Stable")))
+reserveTypes <- df %>%
+  select(reserve, reserveType) %>%
+  distinct()
+loanDataKMStable <- loanDataKM %>%
+  left_join(reserveTypes) %>%
+  filter(reserve %in% head(loanCountReserve, 10)$reserve, reserveType=="Stable")
+km_fitStable <- survfit(Surv(as.numeric(time), as.numeric(eventType)) ~ reserve, data=loanDataKMStable)
+kmPlotStable <- ggsurvplot(km_fitStable, xlab="Time (days)", ylab="Probability of Being Repayed", title="How Long Do Users Wait to Repay Loans (Stable Coins)?", legend.title="")
+kmPlotStable
+```
+This is the survival porobability analysis of repayment for all the stable coins, I wanted to show a clear picture with the various coins and see which comes out on top.
+
+
+
+
+
+
+
+```{r}
+loanDataKMNonStable <- loanDataKM %>%
+  left_join(reserveTypes)
+km_fitNonStable <- survfit(Surv(as.numeric(time), as.numeric(eventType))~reserveType, data=loanDataKMNonStable)
+km_fitNonStable <- ggsurvplot(km_fitNonStable, xlab="Time (days)", ylab="Probability of Repayment", title="Stable vs. Non-Stable Coins?", legend.title="")
+km_fitNonStable
+
+```
+This graph shows the average of all the stable coins and how they perform in comparision to the non-stable coins. It shows how the non-stable coin transactions fare better than the stable coins. It is important to note however, there are more non-stable coins that stable, so this data could be interpreted as skewed in favor of non-stable coins by volume.
+
+
+```{r}
+loanCountReserve <- loanData %>%
+  count(reserve) %>%
+  arrange(-n)
+
+reserveTypes <- df %>%
+  select(reserve, reserveType) %>%
+  distinct()
+loanDataKMStable <- loanDataKM %>%
+  left_join(reserveTypes) %>%
+  filter(reserve %in% head(loanCountReserve, 10)$reserve)
+km_fitAll <- survfit(Surv(as.numeric(time), as.numeric(eventType)) ~ reserve, data=loanDataKMStable)
+kmPlotAll <- ggsurvplot(km_fitStable, xlab="Time (days)", ylab="Probability of Being Repayed", title="How Long Do Users Wait to Repay Loans (All Coins)?", legend.title="")
+kmPlotAll
+
+```
+This graph shows all the coins, which makes it easy to see the stable coins by the non-stable coins and their performances. 
+
+
+
+```{r}
+borrows <- df %>%
+  filter(type=="borrow" )
+
+repays <- df %>%
+  filter(type=="repay")
+
+ 
+borrowWBTC <- borrows %>%
+ filter(reserve=="WBTC" )
+
+ 
+repayWBTC <- repays %>%
+  filter(reserve=="WBTC")
+
+p1 <- generateSurvival(borrowWBTC, repayWBTC)
+
+# borrowGUSD <- borrows %>%
+#   filter(reserve == "GUSD" )
+# 
+# repayGUSD <- repays %>%
+#   filter(reserve == "GUSD")
+# 
+# p3 <- generateSurvival(borrowGUSD, repayGUSD)
+
+borrowUSDC <- borrows %>%
+  filter(reserve == "USDC" )
+
+repayUSDC <- repays %>%
+  filter(reserve == "USDC")
+
+p2 <- generateSurvival(borrowUSDC, repayUSDC)
+
+
+# borrowUSDT <- borrows %>%
+#   filter(reserve == "USDT" )
+# 
+# repayUSDT <- repays %>%
+#   filter(reserve == "USDT")
+# 
+# p4 <- generateSurvival(borrowUSDC, repayUSDT)
+
+
+
+surv_fit_list <- list("WBTC" =p1,
+                      "USDC" =p2)
+
+
+ggsurvplot(surv_fit_list, combine = TRUE, xlab="Time (days)", ylab="Survival Percent", ylim = c(0.99,1), title="Survival Analysis of WBTC and USDC")
+
+
+```
+
+
+```{r}
+borrows <- df %>%
+  filter(type=="borrow" )
+
+repays <- df %>%
+  filter(type=="repay")
+
+deposits <- df %>%
+  filter(type=="deposit")
+
+
+p1 <- generateSurvival(borrows, repays)
+
+# borrowGUSD <- borrows %>%
+#   filter(reserve == "GUSD" )
+# 
+# repayGUSD <- repays %>%
+#   filter(reserve == "GUSD")
+# 
+# p3 <- generateSurvival(borrowGUSD, repayGUSD)
+
+
+
+p2 <- generateSurvival(borrows, deposits)
+
+
+# borrowUSDT <- borrows %>%
+#   filter(reserve == "USDT" )
+# 
+# repayUSDT <- repays %>%
+#   filter(reserve == "USDT")
+# 
+# p4 <- generateSurvival(borrowUSDC, repayUSDT)
+
+
+
+surv_fit_list <- list("repay" =p1,
+                      "deposit" =p2)
+
+
+ggsurvplot(surv_fit_list, combine = TRUE, xlab="Time (days)", ylab="Survival Percent", ylim = c(0.75,1), title="Survival Analysis of WBTC and USDC")
+
+
+```
+
+This is a more indepth analysis of just the WBTC and USDC survivals where it is even clearer to see the difference and a few sections are commented as I was choosing which coins to show the most drastic difference as a clear, less cluttered image.
+  

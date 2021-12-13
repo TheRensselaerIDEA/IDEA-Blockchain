@@ -1,0 +1,109 @@
+---
+title: "MATP-4910  Final Project Notebook "
+author: "Soumya Mishra"
+date: "06 November 2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DAR Project DeFi"
+---
+
+# Final Project: Github Info
+
+
+* github repository: 
+* Your github ID: mishrs4 
+* Final notebook: *mishrs4_assignment7.Rmd* 
+    
+* Summary of github contributions including github issues addressed.
+
+    I commited the generateSurvival.R file that includes the function to perform survival analysis given 2 data sets such as     borrow to repay or any two transactions. This was added to the shiny app with the option to analyze various transaction     data sets. 
+    The issues I resolved include:
+    - create a notebook with survival analysis at the coin level #81 
+    - Survival Analysis function #87
+
+    
+
+# Overview & Problems Tackled
+
+I analyzed several aspects of the survival of the DeFi coins, transactions, and transaction types. I found amongst the several transaction types borrows to repays was the most effective in creating a survival graph that illustrated the effects of time across different Defi coin types. I also found the lack of correlation between the stability of stable coins and non-stable coins in the analysis of the survival of their borrow to repay curve.
+
+# Data Description
+I used the AAVE transaction data in a dataframe with over 400,000 rows, and 27 columns. I transformed the data into different transactions and reserve coins. I utilized the transaction data to calculate the survival of borrows to repays, deposits to borrows, borrows to redeems, and the density of time to liquidation.I also divided the data into reserve types to analyze their survival as categories. 
+
+# Results
+The following are my survival graphs of the different datasets I analyzed. The first four utilized the generateSurvival function I wrote which resolved GitHub Issue #87.
+
+![Borrow to Redeem.](~/IDEA-Blockchain/DefiResearch/StudentNotebooks/Assignment07/images/BorrowRedeem.JPG)
+\newline
+![Borrow to Repay](~/IDEA-Blockchain/DefiResearch/StudentNotebooks/Assignment07/images/BorrowRepay.JPG)
+\newline
+![Deposit to Borrow](~/IDEA-Blockchain/DefiResearch/StudentNotebooks/Assignment07/images/depositBorrow.JPG)\
+\newline
+![Liquidation](~/IDEA-Blockchain/DefiResearch/StudentNotebooks/Assignment07/images/Liquidation.JPG)
+\newline
+![Stable vs NonStable.](~/IDEA-Blockchain/DefiResearch/StudentNotebooks/Assignment07/images/NonStable_vs_Stable.JPG)
+\newline
+![Stable Coin Survival.](~/IDEA-Blockchain/DefiResearch/StudentNotebooks/Assignment07/images/StableSurvival.JPG)
+
+
+
+\newpage
+
+## Problem 1 
+I am analyzing which transaction type is the most effective in analyzing the coins and overall survival of the data. I went through the various transaction types and it is clear the borrow to repay charts are the most illustrative. They show how users borrow and their hesitancy or time to repay the amount borrowed affects the coin's DeFi pool. 
+
+ 
+### Methods
+I used the survminer package along with deplyr to seperate out the data into different transaction types. I then used the survminer package once I transformed the data to include only the timestamps of the transactions I was analyzing. After performing the calculations of the different data sets I was able to combine the analysis method into a function which was then included in the shiny app where others can run the survival analysis on different transaction types based on the most recent data set or even clusters of the users, coins, or other transformations of the data.
+
+	
+### Results
+
+The results of this problem on which transaction type to use were Borrows to Repays as the most sensical transaction to analyze. The percentages of Deposits to Borrows were lower along with a smaller dataset. Out of the different transaction types when further analyzing survival we used the time to repay as a good metric.
+
+
+### Discussion
+
+The survival analysis of the coins show the confidence of users with specific coin types. The stablity of the coin is labeled in the data set, however analyzing user's actions towards the pool shows their opinion and their stake in repaying and borrowing from a certain coin.
+
+## Problem 2
+
+The second problem to analyse were the coin types and their specific survival. I tried analyzing several coins from the data set and then grouped them based on stability.
+ 
+### Methods
+I once again used the same survival packages with survplot to graph the results.
+	
+### Results
+In the graph comapring survival of Stable and Non-stable coins it is interesting to see non-stable coins have a lower probability of not having a borrowed amount repaid. This would indicate the stable coins have a higher probabilty of not being repaid in comparison to the non-stable coins. 
+
+### Discussion
+The results seem ironic given it would seem a stable coin would be more likely to have their borrow repaid as it would seem the stability of the coin would be a reason to repay from the DeFi pool. However, this could be interpreted as users feel more comfortable taking a loan from a stable coin pool than an unstable coin pool. Perhaps users see the unstable coin pool as more risky and would like to keep the loan term short as they are unsure of the future of the non-stable coin.
+
+
+
+# Summary and Recommendations
+
+Overall I found the survival analysis helps put perspective to the transactions by users and how they correlate to the perception of different coins. Analysis of the various coin types highlights how users view that coin, and their loans from those specific pools. 
+
+For the future it would be interesting to plot the "price" of a specific coin in a specific set currency across time and see how the transactions affect the price of different coins over time. It would make sense a lot of unpaid borrows result in liquidation, but also how does this affect the rate at which an user can borrow from a coin? How does it affect the price of the coin in relation to other factors. 
+
+I would recommend the survival analysis be included in the shiny app, especially as the function is versatile and can be applied to ffurther cluster analysis that others worked on throughout the semester.
+
+# References
+
+- survminer
+- survplot
+-autoplot
+-deplyr
+-ggplot
+
+
+# Appendix
+
+
+![Specific Coin Survival.](~/IDEA-Blockchain/DefiResearch/StudentNotebooks/Assignment07/images/StableSurvival.JPG)
+
+
