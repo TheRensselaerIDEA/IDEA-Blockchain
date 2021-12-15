@@ -3,9 +3,9 @@ title: "MATP-4910  Final Project "
 author: "Duke Kwon"
 date: "15 November 2021"
 output:
-  html_document:
-    toc: yes
   pdf_document:
+    toc: yes
+  html_document:
     toc: yes
 subtitle: "DeFi"
 ---
@@ -55,7 +55,6 @@ if (!require("data.table")) {
   install.packages("data.table")
   library(data.table)
 }
-
 if (!require("lubridate")) {
   install.packages("lubridate")
   library(lubridate)
@@ -136,14 +135,11 @@ df_tr <- read_csv("transactions_2.csv")
 #For convenience, the Lubridate package is used here to add two more columns (total 26+2=28) from "timestamp" into a datetime column "ymd", and a Year-Month-Week string column, "ymd_new".
 df_tr$ymd <- as_datetime(df_tr$timestamp) # fix times for the transactions
 setDT(df_tr)[, ymd_new := format(as.Date(ymd), '%Y-%m-%V') ] ## '%Y-%m' for just month-year
-
 print("Dataset Range:");print("Earliest:")
 df_tr$timestamp %>% min() %>% as_datetime() 
 print("Final:")
 df_tr$timestamp %>% max() %>% as_datetime() 
 df_tr$type %>% unique()
-
-
 ```
 
 For tidiness, we omit the outputs. The Rmd contains the full view.
@@ -155,7 +151,6 @@ print("Summary Statistics:")
 df_tr %>% summary()
 print("Column Names:")
 df_tr %>% colnames()
-
 ```
 
 The second data we indirectly use is a modified form of the AAVE User transactions dataset, "df.users", which contains summary statistics by unique user. It consists of 40,659 rows of unique users, with 29 columns/attributes signifying mean statistics for each transaction type (i.e. number of borrows, mean liquidation, etc). Generating this dataset can be sourced from "https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/DefiResearch/StudentNotebooks/users.Rmd".
@@ -220,7 +215,6 @@ for (i_type in df_tr$type %>% unique()) { # for each unique type
   }
   type_idx <- type_idx + 1
 }
-
 ```
 
 
@@ -249,7 +243,9 @@ The dataset used was "df.weekly[[1]]", specified in the datasets section of this
 
 UMAP (uniform manifold approximation projection), effectively learns a manifold approximation of the distribution our data lies in (in the simplest case, effectively generating a directed weighted graph via a style of knn), and maps the approximation to a lower dimensional space by minimizing a style of cross entropy error, iteratively minimizing the objective so that close points are weighted close together, and far points are pushed apart.
 
-Afterwards, under the assumption that weekly data may have some special, nonlinear structures, we cluster via a density based approach by HDBSCAN (hierarchical density-based spatial clustering and applications). HDBSCAN is effective in mitigating the issues of some data not being close to means centers in a simpler k-means approach, but being locally close to other points that are locally close to the mean centers. We use a moderately high Minimum Points hyperparameter (50), which determines minimum points required to be a cluster. For the other parameters, we use the default which tend to be good enough for our analysis. The clustering is done in a higher dimensional space (5D) to preserve some of the finer details of the data.
+Afterwards, under the assumption that weekly data may have some special, nonlinear structures, we cluster via a density based approach by HDBSCAN (hierarchical density-based spatial clustering and applications). HDBSCAN is effective in mitigating the issues of some data not being close to means centers in a simpler k-means approach, but being locally close to other points that are locally close to the mean centers. We use a moderately high Minimum Points hyperparameter (100), which determines minimum points required to be a cluster. For the other parameters, we use the default which tend to be good enough for our analysis. The clustering is done in a higher dimensional space (5D) to preserve some of the finer details of the data.
+
+One thing to note is that HDBSCAN does not require the user to specify the number of clusters as a hyperparameter, and in our case is mainly dependent on the MinPts parameter as mentioned above. In our example, we produce 4 clusters, one mainly being an outlier group.
 
 
 
@@ -266,21 +262,16 @@ minimum_points = 100
 set.seed(43)
 hdb3_list[[i]] <- hdbscan(umap3_list[[i]]$layout, minPts = minimum_points)
 }
-
 ```
 
 Figure 1 is the resulting 2D projection of the UMAP dimensionality reduction. Default parameters were used regarding tolerance/convergence/number of iterations, as it is an iterative technique. The algorithm is not deterministic unless a random seed is set.
 
 Figure 2 is the resulting users colored by cluster. HDBSCAN was run on the original dataset mapped to 5D. We omit a legend for the sake of large cluster outputs (HDBSCAN learns the number of clusters unlike K-means, and so may produce a large number of clusters dependent on the HDBSCAN hyperparameters). 
+In grey, we have outlier points. The number of outliers are highly dependent on both the UMAP and HDBSCAN parameters.
 
 ```{r, echo = FALSE}
-
 df_umap <- data.frame(umap3_list[[1]]$layout)
-
-
 ggplot(df_umap, aes(x = X1, y = X2))  + geom_point(alpha = 0.1, size= 2,shape = 4) + ggtitle("Fig 1: Unique Users' Weekly Borrows Averages Projected via UMAP") + labs(x = "Standard Basis Vector 1 Domain", y = "Standard Basis Vector 1 Domain")
-
-
 n_colors = max(hdb3_list[[1]]$cluster)
 pre_colors <- rainbow(n_colors)
 palette1 <- c("#808080", pre_colors) ## set 0 to a light grey as outliers
@@ -289,16 +280,17 @@ for (i in 0:n_colors) {
   color_labels[hdb3_list[[1]]$cluster == i] = palette1[i+1]
 }
 cluster_names <- c("Outliers", c(1:n_colors))
-
 ggplot(df_umap, aes(x=X1, y=X2)) + geom_point(alpha = 0.1, size = 2, shape = 4, colour = color_labels) + ggtitle("Fig 2: Unique Users' Weekly Borrows Averages Clustered via HDBSCAN in 5D w/ 50 MinPts") + labs(x = "Standard Basis Vector 1 Domain", y = "Standard Basis Vector 1 Domain") + guides(colour = guide_legend(override.aes = list(alpha = 1))) + scale_color_manual(labels = cluster_names, values = palette1)
 ```
 
 
 ### Results
 
-The bulk of our research can be summed into transaction density plots of the various clusters (see appendix and referenced kwond2_assignment4.Rmd for more analysis). 
+The bulk of our research can be summed into transaction density plots of the various clusters (see appendix and referenced kwond2_assignment4.Rmd for more analysis, and an alternate training run with different clusters). 
 
-For this iteration's set of hyperparameters, we were able to characterize a group of highly active swaps, especially within May, June, July for cluster 1, a smaller group of borrows for cluster 2, and slightly risky/liquid users in cluster 4. In one instance, we had multiple high risk groups that were able to be characterized (view appendix).
+In figure 3, the clusters were produced using a random seed of 43, 5 dimensions for UMAP, and 50 MinPts for HDBSCAN. The outlier group had users with large density of swaps within May-21, June-21, and July. Cluster 1 on the other hand grouped users who did moderate amount of borrows within that similar timeline. Cluster 2 does not show much activity throughout time, which likely means they are generally inactive users, doing very few transactions, or transactions spaced out through time. Finally, cluster 3 shows a large density of liquidations between May-21 and June-21, which are likely users who were liquidated from the instability caused by the China crypto ban fiasco in Mid-late May.
+
+
 
 
 ```{r, echo = FALSE}
@@ -312,7 +304,6 @@ df.dict <- as.data.frame(dict)   # Unused except to sort by top clusters in the 
 
 ```{r, echo = FALSE}
 max_clusters <- (df_borrows$hdb_clusters %>% max())+1
-
 topclusters <- top_n(df.dict, n=max_clusters, Freq) %>% arrange(desc(Freq)) # get the top N (N is set to max) sized clusters and their frequencies in sorted order
 cluster_transactions = list()
 raw_list_of_users = list() 
@@ -332,9 +323,7 @@ df_tr_with_clust <- df_tr[df_tr$user %in% as.list(raw_list_of_users[[idx_nooutli
 df_tr_with_clust$cluster <- c_idx
 cluster_transactions[[idx_nooutlier]] <- df_tr_with_clust
 idx_nooutlier <- idx_nooutlier + 1
-
 }
-
 ```
 
 
@@ -344,15 +333,12 @@ if (!require("anytime")) {
    install.packages("anytime")
    library(anytime)
 }
-
 df_final <- df_tr;
 df_final$cluster <- 1
 for (i in 0:(max_clusters-1)) { 
   users_from_cluster <- df_borrows[df_borrows$hdb_clusters == i,]$user %>% unique()
   df_final[df_final$user %in% users_from_cluster,]$cluster <- i;
 } 
-
-
 df_final$date<- anydate(df_final$timestamp)
 gg_color_hue <- function(n) {
   hues = seq(15, 375, length = n + 1)
@@ -360,9 +346,7 @@ gg_color_hue <- function(n) {
 }
 # 6-list of ggplot colors explicitly specified
 pgg <- gg_color_hue(6)
-cluster_names <- c('0' = "Cluster 1", '1' = "Cluster 2", '2' = "Cluster 3", '3' = "Cluster 4", '4' = "Cluster 5", '5' = "Cluster 6")
-
-
+cluster_names <- c('0' = "Outliers", '1' = "Cluster 1", '2' = "Cluster 2", '3' = "Cluster 3", '4' = "Cluster 4", '5' = "Cluster 5")
 ggplot(data = df_final[!(is.na(df_final$cluster)), ], aes(x = date,  group = type, color = type)) + 
   geom_density() +
   ggtitle("Fig 3: Transaction Types Over Time by UMAP+HDBSCAN User Clusters")+
@@ -373,19 +357,51 @@ ggplot(data = df_final[!(is.na(df_final$cluster)), ], aes(x = date,  group = typ
   facet_wrap(~ cluster, labeller = as_labeller(cluster_names))
   
 
+
 ```
 
 
-Here, we provide an alternative run of our process which shows a few high risk/liquid groups. 
-```{r, out.width="5\\linewidth", include=TRUE, fig.align="center", fig.cap=c("Fig 4: Alternative Transaction Types Over Time by UMAP+HDBSCAN User Clusters"), echo=FALSE}
-knitr::include_graphics("app2_matp4910.png")
-```
 
+We also output the total number of each type of transaction for each cluster in Table 1. The large spikes in densities for swaps for the outlier group is likely a few users with abnormally large valued swaps, which would make sense as outliers. In cluster 2, despite having a substantial number of transactions, the densities show relatively low probabilities of each type, as the amounts are likely very small. The appendix shows a bit more of this, with stacked bar plots comparing the amounts per type and by cluster.
+
+
+```{r, include = T, echo = FALSE}
+df_total_types <- setNames(data.frame(matrix(ncol = 7, nrow = 0)), c("Cluster","Borrows", "Repays", "Liquidations", "Deposits", "Redeems", "Swaps"))
+
+types_possible <- df_final$type %>% unique()
+maxval <- max_clusters - 1
+for (i in 0:maxval) {
+  type_list <- list()
+  if (i==0) { #outlier case
+    type_list[[1]] <- i
+  }
+  else {
+    type_list[[1]] <- i 
+  }
+  for (j in 1:6) { # 6 different types
+    typeshape <- df_final[df_final$type == types_possible[j] & df_final$cluster == i,] %>% dim()
+    type_list[[j+1]] <- typeshape[1]  
+  }
+  cluster_types <- unlist(type_list)
+  df_total_types <- rbind(df_total_types, cluster_types)
+  
+}
+df_total_types<-  setNames(df_total_types, c("Cluster","Borrows", "Repays", "Liquidations", "Deposits", "Redeems", "Swaps"))
+df_total_types[1,1] <- "Outliers"
+
+kable(df_total_types, caption = "Number of Transactions by Cluster")
+
+
+
+
+```
 
 
 ### Discussion
 
-Generally, it seems to be that our new features fall short, without proper tuning of the number of UMAP dimensions and the min points in HDBSCAN. However, we are certainly able to cluster users with specific behaviors to a weekly transaction scale as shown above, especially if we observe Fig 4. The clustering was able to group two large liquidation groups of users, Cluster 5 and 6, and more stable borrows such as clusters 2 and 3 (though it looks like our clustering located time as a pattern, as cluster 3 transactions happen in late May).
+Generally, it seems to be that our new features are not much of an improvement from the non-weekly features, at least without proper tuning of the number of UMAP dimensions and the min points in HDBSCAN (if we compare it to our alternate training run, which is in the appendix). Three clusters do not seem like enough to characterize a few ten thousand users. The issue is likely due to the fact that we limit our dataset to users who have had at least one borrow within our timeframe. For example, it may be the case that a user borrowed earlier than our timeframe, but then liquidated within our timeframe. This user would not be included within our borrow dataset.
+
+However, within the appendix, an alternate training run was done - we are certainly able to cluster users with specific behaviors to a weekly transaction scale. 
 
 The main limitation of the results are the certainty of our hypothesis/intuition. Despite the fact that it may look like our clusters are "good", it may be beneficial to run some cluster metrics, or test the "accuracy" of the clusterings with a synthetic, labeled data set (i.e. manually encode high liquidations or high risk behavior).
 
@@ -415,12 +431,11 @@ generateSurvival <- function(start, end, str_name)
   p1 <- autoplot(km_fit,xlab="time (days)",ylab="Survival Percent",title="Survival Analysis") + ylim(c(0.9, 1.0)) + ggtitle(str_name)
   return (p1)
 }
-
 ```
 	
 ### Results
 
-It terms of interpreting the survival plots, it seems that users from cluster 3 generally repay faster/repay in general compared to the overall dataset. We discuss more about figures 5-8 below.
+It terms of interpreting the survival plots, it seems that users from cluster 3 generally repay faster/repay in general compared to the overall dataset. We discuss more about figures 4-7 below.
 ```{r, warning = FALSE, message= FALSE, echo = FALSE}
 df_borrows <- df.weekly[[1]]
 df_borrows["hdb_clusters"] <- hdb3_list[[1]]$cluster
@@ -432,7 +447,6 @@ df.dict <- as.data.frame(dict)   # Unused except to sort by top clusters in the 
 
 ```{r, warning = FALSE, message= FALSE, echo = FALSE}
 max_clusters <- (df_borrows$hdb_clusters %>% max())+1
-
 topclusters <- top_n(df.dict, n=max_clusters, Freq) %>% arrange(desc(Freq)) # get the top N (N is set to max) sized clusters and their frequencies in sorted order
 cluster_transactions = list()
 raw_list_of_users = list() 
@@ -452,9 +466,7 @@ df_tr_with_clust <- df_tr[df_tr$user %in% as.list(raw_list_of_users[[idx_nooutli
 df_tr_with_clust$cluster <- c_idx
 cluster_transactions[[idx_nooutlier]] <- df_tr_with_clust
 idx_nooutlier <- idx_nooutlier + 1
-
 }
-
 ```
 
 
@@ -462,23 +474,21 @@ idx_nooutlier <- idx_nooutlier + 1
   for (i in 1:max_clusters) {
 borrows <- cluster_transactions[[i]] %>%
   filter(type=="borrow")
-
 repays <- cluster_transactions[[i]] %>%
   filter(type=="repay")
+if (i == 0) {
+  print(generateSurvival(borrows, repays, paste("Fig", i+3,": Outliers: First Borrow to Repay Survival Analysis") ))
+} else {
+    print(generateSurvival(borrows, repays, paste("Fig", i+3,": Cluster",i-1,": First Borrow to Repay Survival Analysis") ))
 
-
-print(generateSurvival(borrows, repays, paste("Fig", i+4,": Cluster",i,": First Borrow to Repay Survival Analysis") ))
+}
   }
-
-
 borrows <- df_tr %>%
   filter(type=="borrow")
-
 repays <- df_tr %>%
   filter(type=="repay")
   
-print(generateSurvival(borrows, repays, paste("Fig", i+5, "Entire Dataset: First Borrow to Repay Survival Analysis") ))
-
+print(generateSurvival(borrows, repays, paste("Fig", i+4, ":Entire Dataset: First Borrow to Repay Survival Analysis") ))
 ```
 
 
@@ -511,6 +521,13 @@ The following are references to official libraries/docs (which links the origina
 
 # Appendix
 
+Here, we provide the results to the density plots for an alternate UMAP + HDBSCAN clustering run. UMAP is an iterative problem and may change depending on the random seed. Recall that HDBSCAN then learns the best number of clusters. It is not a hyperparameter that you need to tune. However, depending on the MinPts hyperparameter (for HDBSCAN), you may get different cluster sizes, and cluster numbers.
+
+
+```{r, out.width="5\\linewidth", include=TRUE, fig.align="center", fig.cap=c("Alternative Transaction Types Over Time by UMAP+HDBSCAN User Clusters"), echo=FALSE}
+knitr::include_graphics("app2_matp4910.png")
+```
+The clustering was able to group two large liquidation groups of users, Cluster 4 and 5, and more stable borrows such as clusters 1 and 2 (though it looks like our clustering located time as a pattern, as cluster 2 transactions happen in late May).
 
 ```{r, echo = FALSE}
 df_borrows <- df.weekly[[1]]
@@ -523,7 +540,6 @@ df.dict <- as.data.frame(dict)   # Unused except to sort by top clusters in the 
 
 ```{r, echo = FALSE}
 max_clusters <- (df_borrows$hdb_clusters %>% max())+1
-
 topclusters <- top_n(df.dict, n=max_clusters, Freq) %>% arrange(desc(Freq)) # get the top N (N is set to max) sized clusters and their frequencies in sorted order
 cluster_transactions = list()
 raw_list_of_users = list() 
@@ -543,9 +559,7 @@ df_tr_with_clust <- df_tr[df_tr$user %in% as.list(raw_list_of_users[[idx_nooutli
 df_tr_with_clust$cluster <- c_idx
 cluster_transactions[[idx_nooutlier]] <- df_tr_with_clust
 idx_nooutlier <- idx_nooutlier + 1
-
 }
-
 ```
 
 
@@ -554,16 +568,13 @@ Here, we plot a baseline stacked barplot to understand weekly transactions withi
 
 ```{r, echo = FALSE}
 # Plot baseline stacked barplot for weekly transaction averages.
-
 # generate N list of custom colors
 gg_color_hue <- function(n) {
   hues = seq(15, 375, length = n + 1)
   hcl(h = hues, l = 65, c = 100)[1:n]
 }
-
 # 6-list of ggplot colors explicitly specified
 pgg <- gg_color_hue(6)
-
 # Start plotting weekly by time. Start with all Users first
 df_tr %>% 
   dplyr::count(ymd_new, type, wt = amount, name = "amount") %>% 
@@ -611,17 +622,16 @@ red.c <- redeem_only_list %>% rbindlist()
 liq.c <-  liquidation_only %>% rbindlist()
 rep.c <- repay_only_list %>% rbindlist()
 bor.c <- borrow_o %>% rbindlist()
-
 # Plot by transaction type weekly
 loop_labels <- c("deposit", "redeem", "repay", "borrow", "liquidation")
 cap_loop_labels <- c("Deposits", "Redeems", "Repays", "Borrows", "Liquidations")
 facet_data_list <- list(dep.c, red.c, rep.c, bor.c, liq.c)
-
-
 ```
 
 Here, we plot the averaged (by number of unique users per cluster) of amount USD deposits, redeems, repays, and borrows weekly. The stacked values indicate the amount for that specific cluster. 
 Remark: Recall the weekly features were generated based on borrows, so the clustering will likely find distinct differences mainly in the borrows. However, we know that all the transaction types are generally highly correlated weekly.
+
+As we mentioned earlier, we see that there is a great imbalance in terms of value of transactions per cluster.
 
 ```{r, echo = FALSE}
 fct_plot_list <- list()
@@ -639,10 +649,8 @@ for (m in 1:4) {
   
   
 }
-
 # threshold 
 facet_data_list[[5]][facet_data_list[[5]]$amountUSDCollateral < 1] <- 1 # threshold for the small transaction values
-
   pltobj <- ggplot(dplyr::count(facet_data_list[[5]] ,ymd_new, cluster, wt = amountUSDCollateral, name = "amountUSDCollateral")) + 
   geom_bar(aes(x=ymd_new,y= amountUSDCollateral, fill = as.factor(cluster)), ## adjust via log10()
            stat='identity') + ggtitle(paste0("Averaged ", cap_loop_labels[5], " of Users by Cluster\n Weekly From Jan 2021 to Aug 2021")) + labs(y = "Amount (USD)", x= "Time (Weeks)")+
@@ -657,7 +665,3 @@ for (m in 1:5) {
   print(fct_plot_list[[m]])
 }
 ```
-
-
-
-
