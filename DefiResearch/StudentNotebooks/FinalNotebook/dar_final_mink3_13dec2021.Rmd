@@ -1,0 +1,260 @@
+---
+title: "MATP-4910  Final Project Notebook"
+author: "Kaiwen Min"
+date: "13 Dec 2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DAR Project DeFi"
+---
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+# CAUTION: DO NOT interrupt R as it installs packages!!
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dp)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+
+if (!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("data.table")) {
+  install.packages("data.table")
+  library(data.table)
+}
+
+```
+
+
+
+# Final Project: Github Info
+
+
+
+* github repository: https://github.rpi.edu/DataINCITE/IDEA-Blockchain/tree/dar-mink3
+* Your github ID: dar-mink3
+* Final notebook: dar_final_mink3_13dec2021.Rmd
+    
+* Issues:
+    
+    https://github.rpi.edu/DataINCITE/IDEA-Blockchain/issues/99
+    
+    https://github.rpi.edu/DataINCITE/IDEA-Blockchain/issues/85
+
+
+# Overview & Problems Tackled
+
+I wanted to look into the borrow rates and borrow amounts in US dollar for the reserves to see if there is a pattern. Also I would like to see if there are any similarities by top users with most transaction amount in US dollars.
+
+
+# Data Description
+
+I used the two rds files for the data. The first transaction.Rds contains 481519 data points of 26 features. Each data point represents a transaction made in AAVE platform and the features describe properties of the transaction. The features include the type of transaction, amount in US dollars, timestamp, user, type of reserve, etc. The second transactionsv2.rds contains 745612 data points of 33 features. The data points also represent transactions made in AAVE platform with some more features described and data points included. It contains the information that whether the user is a protocol contractor, the made up alias for the users, and the liquidator of the transaction if the transaction is liquidate. Also timestamp is converted into date time in real world for better virtualization.
+
+# Results
+
+## Problem 1 
+
+What are the patterns of borrow rates and borrow amounts in USD of some of the most borrowed coins? Are there similarities shared between these coins? Do these coins have different patterns under different borrow rate modes?
+ 
+### Methods 
+
+I used transactions.Rds in this problem. First I keep the borrows with borrow rate less than 50 percent and amount USD between 1 dollar and 100 million dollars as I recognize these as regular borrows. I consider the borrows eliminated as not typical and will not be included in the general pattern. Borrows without borrow rates are also eliminated as I want to find out about the borrow rates. There are 94977 borrows in the original data and 86552 borrows after applying the conditions. 
+
+Then I count the data to find 5 most borrowed coins and take a closer look at the borrow rates and borrow amounts. The top 5 coins with most borrows are USDC, USDT, DAI, GUSD, and WBTC. There are 75863 borrows made with these reserves.
+	
+### Results
+
+```{r, echo=FALSE, warning=FALSE}
+# load Rds (binary version of csv file) into dataframe
+df <- read_rds('../../Data/transactions.Rds')
+
+df.borrow <- df %>% filter(!is.na(borrowRate)) %>% 
+  filter(type == "borrow") %>% 
+  filter(borrowRate <= 50) %>% 
+  filter(amountUSD <= 100000000) %>%
+  filter(1 <= amountUSD)
+
+df.borrow1 <- df.borrow %>% dplyr::count(reserve)
+topcoins <- df.borrow1[order(df.borrow1$n, decreasing = TRUE),]$reserve[1:5]
+
+df.borrow.new2 <- df.borrow %>%
+  filter(reserve %in% topcoins) %>%
+  filter(borrowRate <= 50) %>%
+  rename(borrowRatePercentage = borrowRate)
+```
+
+The graph below shows the borrow rates under different borrow rate modes for the coins mentioned above. We can observe that the densities for different coins under the same borrow rate mode are similar, especially for USDC, USDT and DAI. Different borrow rate modes will likely lead to different borrow rates as stable borrows tend to have a much higher borrow rate which are about double of the variable borrows.
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(df.borrow.new2,aes(borrowRatePercentage, color = reserve, linetype = borrowRateMode)) +
+  ggtitle("Borrow rates for most borrowed coins")+ 
+  geom_density()
+```
+
+Here are the borrow amounts in US dollars for the coins. We notice that differences in reserve type and borrow rate mode do not have a significant impact on the borrow amounts. All the densities are very much the same with the peak around 10000 dollars.
+
+```{r, echo=FALSE, warning=FALSE}
+ggplot(df.borrow.new2,aes(log10(amountUSD), color = reserve, linetype = borrowRateMode)) +
+  ggtitle("Log10 borrow amounts in USD for most borrowed coins")+ 
+  geom_density()
+```
+
+### Discussion
+
+We could see that the most borrowed coins generally have a borrow rate of around 4 percent under variable borrow rate mode and about 10 percent under stable borrow rate mode from the first graph. All the coins share similar borrow rates under the same borrow rate mode. We could also see that the borrow amount USD is very much the same under variable borrow rate mode and stable borrow rate mode. People tend to borrow around 10000 dollars per transaction from the second graph, which is very persuasive as people love round figures. These findings might be applicable to other reserves in DeFi as well since the most borrowed 5 coins under the criteria is approximately 80 percent of the overall borrows. The other reserves could have similar patterns in borrow rates and borrow amount in US dollars.
+
+## Problem 2
+
+What are the patterns for the top users with most transaction total amounts? Do them make about the same portion for each type of transaction? Do them make about the same amount of transactions?
+ 
+### Methods
+
+I used transactionsv2.rds for this problem. First I counted the users' transactions with weights of amount USD to find out the top 5 users with most total transaction amount USD. Then I plot the number of transactions and amount of transactions in US dollars per week with facet plot for comparison between these top users. I made a table to find the exact number of numbers of transactions and amount USD of transactions, and whether the user is a protocol contractor. Last, I pick the three users with less number of transactions since they were not clearly visualized in the graph before. Then I made a swarm plot for these users to clearly visualize them.
+	
+### Results
+
+I start with the number of transactions per week for the top users. I notice that two of them made over 10000 transactions while others made less than 1000 so they are not clearly visualize in this graph. For the second user, I notice that he made a higher portion of desposit compared to the third user.
+
+```{r, echo=FALSE, warning=FALSE}
+# load Rds (binary version of csv file) into dataframe
+df <- read_rds('../../Data/transactionsv2.rds')
+
+users <- df %>% dplyr::count(user_alias, wt=amountUSD, protocolContract, name = "amountUSD")
+top20amountuser <- users[order(users$amountUSD, decreasing = TRUE),]$user_alias[1:20]
+
+df.1users<-filter(df, user_alias %in% top20amountuser[1:5])
+
+df.1users$ymd <- as_datetime(df.1users$timestamp) # fix times for the transactions
+
+setDT(df.1users)[, ymd_new := format(as.Date(ymd), '%Y-%m-%V') ] ## '%Y-%m' for just month-year
+
+df.1user <- df.1users %>% dplyr::count(ymd_new, type, user_alias, protocolContract, name = "amount")
+
+ggplot(df.1user) + 
+  geom_bar(aes(x=ymd_new,y= amount, fill = type),
+           stat='identity') + ggtitle("Transactions Weekly for top 5 users with most transactions amountUSD") + labs(y = "Number of transactions", x= "Time (Weeks)")+ 
+  theme(
+           axis.text.x=element_blank(),
+           axis.ticks.x=element_blank())+facet_grid(rows = df.1user$user_alias)
+```
+
+Then I check the amount of transactions in US dollars for the top users per week. I notice that the fourth and fifth user both made comparatively high amount of repay. Also every user have a significant amount of borrow except for the third user. Each user made a lot of deposit and redeem, which is not surprising. The fifth user borrows a lot while others have little borrow amount compared to their deposit amount. Although the third user made a lot of transactions, the user does not have a high total amount for the transactions compartively.
+
+```{r, echo=FALSE, warning=FALSE}
+df.1user <- df.1users %>% 
+  dplyr::count(ymd_new, type, user_alias, wt=amountUSD, name = "amountUSD")
+
+ggplot(df.1user) + 
+  geom_bar(aes(x=ymd_new,y= amountUSD, fill = type),
+           stat='identity') + ggtitle("User Transactions amountUSD Weekly for top 5 users with most transaction amountUSD") + labs(y = "AmountUSD of transactions", x= "Time (Weeks)")+ 
+  theme(
+           axis.text.x=element_blank(),
+           axis.ticks.x=element_blank())+facet_grid(rows = df.1user$user_alias)
+```
+
+The tables show the detailed information about the exact number of number of transactions and amount of transactions for the top users.
+
+```{r, echo=FALSE, warning=FALSE}
+df.1user <- df.1users %>% dplyr::count(user_alias, protocolContract, name = "amount")
+kable(df.1user, align = 'c')
+df.1user <- df.1users %>% 
+  dplyr::count(user_alias, wt=amountUSD, protocolContract, name = "amountUSD") 
+kable(df.1user, align = 'c')
+```
+
+To clearly visualize the three users with less transactions, I select these three users and made a swarm plot. I notice that the second user have a higher percent of collateral.
+
+```{r, echo=FALSE, warning=FALSE}
+df.1users<-filter(df, user_alias %in% top20amountuser[2:4])
+df.1users$ymd <- as_datetime(df.1users$timestamp) # fix times for the transactions
+
+setDT(df.1users)[, ymd_new := format(as.Date(ymd), '%Y-%m-%V') ] ## '%Y-%m' for just month-year
+
+df.1user <- df.1users %>% dplyr::count(ymd_new, type, user_alias, protocolContract, name = "amount")
+
+ggplot(df.1user) + 
+  geom_bar(aes(x=ymd_new,y= amount, fill = type),
+           stat='identity') + ggtitle("Transactions Weekly for top 5 users with most transactions amountUSD") + labs(y = "Number of transactions", x= "Time (Weeks)")+ 
+  theme(
+           axis.text.x=element_blank(),
+           axis.ticks.x=element_blank())+facet_grid(rows = df.1user$user_alias)
+
+ggplot(df.1users,aes(user_alias, ymd,color=type)) + 
+        geom_beeswarm(cex=1)+
+        coord_flip()+
+        ggtitle("User Transaction History")+ 
+        labs(x = "User Alias", y= "Time")
+
+```
+
+### Discussion
+
+There isn't much things in common between the top users as the patterns vary from the graphs above. All of the users deposited and redeemed in huge amounts and had no or little liquidation, but only Shirley Lamberton borrowed a lot of money which is shown in the second graph in this part. Ruth Felan did a higher portion of collateral, and Gladys Marquez who is a protocol contractor had a higher portion of deposit. Also the differences for number of deposits between the top users are huge which can be easily observed in the first graph.
+
+
+# Summary and Recommendations
+
+For the top coins that are borrowed most, different coins share a similar borrow rate under the same borrow rate mode. These coins generally have a borrow rate of around 4 percent under variable borrow rate mode and about 10 percent under stable borrow rate mode. Users tend to have a transaction around 10000 dollars as we may have a favor towards round figures. For typical users I obtained with the most transaction amount in USD, I notice that they do not have much in common. These users all have no or little liquidation and huge amount in borrow and redeem. The only protocol contractor among them have a higher portion of deposit. I would recommend my analysis to be included in an expanded app or paper as I got visualization of the most borrowed coins and typical users. Although it's not much, but I believe some of my graphs clearly show some patterns and able to provide some insights for people that are not familiar with DeFi and cryptocurrencies.
+
+# References
+
+
+
+# Appendix
+
+
+
+
+
+
