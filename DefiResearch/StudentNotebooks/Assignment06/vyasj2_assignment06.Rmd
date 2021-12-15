@@ -244,9 +244,9 @@ ggsurvplot(km_fit_brm,conf.int=TRUE,xlim=c(0,250),ylim=c(0.87,1),break.time.by=2
 km_fit_cr <- survfit(Surv(age, status) ~ collateralReserve, data=wethSurvivalData %>%
                        dplyr::filter(collateralReserve %in% 
                                        #c("USDC","DAI","WBTC","LINK","WETH")))
-                                       c("AAVE","LINK","XSHUSHI")))
+                                       c("AAVE","LINK","XSUSHI")))
 summary(km_fit_cr, times = c(1,30,60,90*(1:10)))
-ggsurvplot(km_fit_cr,legend.title="Collateral",legend.labs=c("AAVE","LINK","XSHUSHI")) +
+ggsurvplot(km_fit_cr,legend.title="Collateral",legend.labs=c("AAVE","LINK","XSUSHI")) +
   xlab("Time (Days)") +
   ggtitle("Survival of WETH Borrow until Liquidation by Collateral Reserve")
 
@@ -278,7 +278,7 @@ ggsurvplot(km_fit_all,conf.int=TRUE,xlim=c(0,250),ylim=c(0.3,1),break.time.by=25
 
 km_fit_brm_all <- survfit(Surv(age, status) ~ borrowRateMode, data=allSurvivalData)
 summary(km_fit_brm_all, times = c(1,30,60,90*(1:10)))
-ggsurvplot(km_fit_brm_all,conf.int=TRUE,xlim=c(0,21),ylim=c(0.87,1),break.time.by=1) +
+ggsurvplot(km_fit_brm_all,conf.int=TRUE,xlim=c(0,21),break.time.by=1) +
   xlab("Time (Days)") +
   ggtitle("Survival of Borrow until Liquidation by Borrow Rate Mode")
 
