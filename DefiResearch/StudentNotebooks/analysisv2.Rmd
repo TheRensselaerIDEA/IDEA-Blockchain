@@ -187,3 +187,96 @@ wethPriceDay <- wethPrice %>%
 
 wethPriceDay
 ```
+
+```{r}
+liquidations %>%
+  dplyr::filter(principalReserve=="USDC") %>%
+  dplyr::group_by(name) %>%
+  dplyr::summarise(n=n())
+```
+
+```{r}
+specific_survival <- function(pCoin,cCoin,data) {
+  borrowData <- data %>%
+    dplyr::filter(type=="borrow" & reserve==pCoin) %>%
+    dplyr::select(reserve,onBehalfOf_alias,timestamp,borrowRateMode) %>%
+    dplyr::rename(name=onBehalfOf_alias) %>%
+    dplyr::arrange(timestamp)
+  
+  liquidateData <- data %>%
+    dplyr::filter(type=="liquidation" & principalReserve==pCoin & collateralReserve==cCoin) %>%
+    dplyr::select(user_alias,timestamp,principalReserve,collateralReserve) %>%
+    dplyr::rename(name=user_alias) %>%
+    dplyr::arrange(timestamp)
+  
+  survival.data <- left_join(borrowData,liquidateData,by="name") %>%
+    dplyr::mutate(timeDiff=case_when(
+      is.na(timestamp.y) ~ max(borrowData$timestamp),
+      TRUE ~ timestamp.y-timestamp.x)) %>%
+    dplyr::mutate(status=case_when(
+      timeDiff==max(borrowData$timestamp) ~ 0,
+      TRUE ~ 1)) %>%
+    dplyr::select(name,timeDiff,status,borrowRateMode)
+  head(survival.data)
+  
+  # km_tmp_fit <- survfit(Surv(timeDiff,status) ~ 1, data=survival.data)
+  # ggsurvplot(km_tmp_fit)
+}
+
+specific_survival("USDC","WETH",raw_df)
+```
+
+```{r}
+# raw_df <- read_rds("../../Data/transactionsv2.rds")
+
+borrows <- raw_df %>%
+  dplyr::filter(type=="borrow")
+
+stable.borrows <- borrows %>%
+  dplyr::filter(borrowRateMode=="Stable") %>%
+  dplyr::filter(!(reserve %in% c("USDC","USDT","DAI","SUSD","GUSD","TUSD"))) %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA))
+
+variable.borrows <- borrows %>%
+  dplyr::filter(borrowRateMode=="Variable") %>%
+  dplyr::filter(!(reserve %in% c("USDC","USDT","DAI","SUSD","GUSD","TUSD"))) %>%
+  dplyr::filter(borrowRate <= 100) %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA))
+
+ggplot(stable.borrows, aes(x=as.Date(datetime),y=rollingAvg21)) + 
+  geom_line() +
+  geom_vline(xintercept=as.Date(as_datetime(1621344738)), linetype="dotted") +
+  scale_x_date(date_labels="%m-%y") + 
+  xlab("Date") +
+  ylab("Borrow Rate") +
+  ggtitle("21-Day Rolling Average Stable Borrow Rate of Non-Stablecoins")
+
+ggplot(variable.borrows, aes(x=as.Date(datetime),y=rollingAvg21)) + 
+  geom_line() +
+  geom_vline(xintercept=as.Date(as_datetime(1621344738)), linetype="dotted") +
+  scale_x_date(date_labels="%m-%y") + 
+  xlab("Date") +
+  ylab("Borrow Rate") +
+  ggtitle("21-Day Rolling Average Variable Borrow Rate of Non-Stablecoins")
+```
+
+```{r}
+stablecoin.borrow.counts <- borrows %>%
+  dplyr::filter(reserve %in% c("USDC","USDT","DAI","SUSD","GUSD","TUSD")) %>%
+  dplyr::mutate(date=as.Date(datetime)) %>%
+  dplyr::arrange(date) %>%
+  dplyr::group_by(date) %>%
+  dplyr::count(date)
+
+ggplot(stablecoin.borrow.counts, aes(x=date,y=n)) + geom_line()
+```
+
+```{r}
+ggplot(raw_df %>%
+         dplyr::filter(!reserve %in% c("USDC","USDT","DAI","SUSD","GUSD","TUSD")) %>%
+         dplyr::filter(reservePriceUSD < 20000000000000),
+       aes(x=as.Date(datetime),y=reservePriceUSD)) + geom_line()
+```
+
