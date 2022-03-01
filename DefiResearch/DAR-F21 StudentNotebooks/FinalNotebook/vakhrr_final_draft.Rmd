@@ -1,0 +1,374 @@
+---
+title: "MATP-4910  Final Project Notebook"
+author: "Roman Vakhrushev"
+date: "12/05/2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DeFi"
+---
+
+# Personal Contribution	
+
+All other work was completed by me. 
+
+All the code for the graphs can be found in vakhrr_final_draft.Rmd.
+
+# GitHub Issues
+
+Issue #92 self-assigned and completed
+
+# GitHub Commits
+
+Branch name: dar-vakhrr
+
+Files: vakhrr_final_draft.Rmd, 
+vakhrr_final_draft.pdf, 
+vakhrr_final_draft.html
+
+
+# Overview
+There are many liquidation transactions in AAVE. At the same time, liquidations differ in size, time and types of coins. This paper attempts to explain the behavior of two groups of liquidators: non-profitable (deficient) liquidators, and very profitable (good) liquidators. The paper discusses various aspects of their liquidation strategy, as well as, provides some ideas on the reasons why these two groups might make liquidations these ways.
+
+# Data Description
+
+The data was prepared based on the original transactions data. The original data contains over 700000 rows each representing one of seven types of transactions in AAVE protocol (deposit,swap,repay,borrow,redeem,liquidation,collateral). Each row contains over 30 columns (some fields might not be used for some transaction types) that represent different aspects of transactions made by users.
+
+Some selected parts of this data (i.e. filtered by liquidations) were used. The data was also rearranged by specific groups of liquidators to perform the analysis of liquidators.
+
+```{r setup, echo=FALSE, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+# CAUTION: DO NOT interrupt R as it installs packages!!
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+if (!require("gplots")) {
+  install.packages("gplots")
+  library(gplots)
+}
+
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dp)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+if (!require("plotly")) {
+  install.packages("plotly")
+  library(plotly)
+}
+if (!require("ggrepel")) {
+  install.packages("ggrepel")
+  library(ggrepel)
+}
+if (!require("sjmisc")) {
+  install.packages("sjmisc")
+  library(sjmisc)
+}
+if (!require("sjmisc")) {
+  install.packages("sjmisc")
+  library(sjmisc)
+}
+if (!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+
+if (!require("rpart")) {
+  install.packages("rpart")
+  library(rpart)
+}
+
+if (!require("randomForest")) {
+  install.packages("randomForest")
+  library(randomForest)
+}
+
+
+```
+
+```{r, echo = FALSE}
+#data collection as always
+df<-read_rds('../../Data/transactionsv2.rds')
+# Use deplyr to drop NA reserves, add the counts and then kep only the top 20
+reservecoins <- df %>%  drop_na(reserve) %>% 
+count(reserve) %>% 
+arrange(-n) %>% 
+head(20)
+```
+
+```{R, echo=FALSE}
+#function to mark stable and non-stable coins
+coinType <- function(coin) {
+    #stable_coins <- list("USDC","USDT","DAI","BUSD","SUSD","GUSD","TUSD")
+    if(str_contains(coin,"USD",ignore.case = TRUE))
+    {
+      result = "stable"
+    }
+    else if(str_contains(coin,"DAI",ignore.case = TRUE))
+    {
+      result = "stable"
+    }
+    else
+    {
+      result = "non-stable"
+    }
+    return(result)
+}
+
+defLiquid <- function(principal, collateral) {
+  if(collateral < principal)
+  {
+    result = TRUE
+  }
+  else
+  {
+    result = FALSE
+  }
+  return(result)
+}
+
+```
+
+## Problem 1: Deficient Liquidators
+
+When we were looking into the data on liquidations, we were able to find some transactions, which did not have any obvious explanation. These liquidations have their collateral value (in USD) being lower than that of principal, and we call them deficient. So, if those liquidators bought cryptocurrency for those liquidations immediately before making liquidation calls and sold the collateral they claimed immediately after, they would lose some money. The actual aim was to study those users and see if there is any reason why these deficient liquidations happened. 
+
+ 
+### Methods
+
+In order to analyze deficient liquidators, we first created a new data frame for liquidators (which was created based on the existing data frame on transactions). Then, this data frame was filtered to only contain information on deficient liquidators. This data frame was analyzed from various points of view, different statistics were collected and reflected on the graphs and tables.
+	
+### Results
+
+```{R, echo=FALSE}
+
+dfst <- df %>% filter(type == "liquidation") %>% filter(collateralReserve != "WETH") %>% filter(principalReserve != "WETH")%>% filter(collateralReserve != "AmmWETH") %>% filter(principalReserve != "AmmWETH") %>% filter(amountUSDCollateral<amountUSDPincipal)
+
+dfst$collateralType <- mapply(coinType, dfst$collateralReserve)
+dfst$principalType <- mapply(coinType, dfst$principalReserve)
+
+plot1 <- ggplot(dfst,aes(x = amountUSDPincipal, y = amountUSDCollateral,color = collateralType, shape = principalType)) + geom_point() + ggtitle("Liquidations with Collateral below Principal") + geom_abline() + xlab("Principal (USD)") + ylab("Collateral (USD)")
+
+plot1
+
+```
+
+We can take a look into how deficient liquidations are distributed on the graph above. First of all, there are just a few liquidations with very high collateral and principal value. Most of the deficient liquidations are below $100000 in principal. Second, we see that there are no deficient liquidations, where both collateral and principal are stable coins. This is probably just because there are very little (stable,stable) liquidations in general. Lastly, we observe that some complicated distribution in terms of distance from the identity line. There are some deficient liquidations that are extremely close to the identity line, but there are also a lot of deficient liquidations that are quite distant from it.
+
+```{R, echo=FALSE}
+#Show transactions, where collateral<principal (exclude WETH and AmmWETH for now). 
+dfst <- df %>% filter(type == "liquidation") %>%  filter(amountUSDCollateral<amountUSDPincipal)
+
+dfst$collateralType <- mapply(coinType, dfst$collateralReserve)
+dfst$principalType <- mapply(coinType, dfst$principalReserve)
+
+dfst <- dfst %>% group_by(user) %>% summarize(num_def = n(),total_collateral = sum(amountUSDCollateral), total_principal = sum(amountUSDPincipal)) %>% mutate(percent = total_collateral/total_principal * 100)
+
+#plot <- ggplot(dfst,aes(y = total_collateral,x = total_principal,color = as.factor(n))) + geom_point() + ggtitle("Deficient Liquidators") + geom_abline() + xlab("Total Collateral(USD)") + ylab("Total Principal(USD)") 
+  
+plot <- ggplot(dfst,aes(y = total_collateral,x = total_principal,color = as.factor(num_def))) + geom_point() + ggtitle("Deficient Liquidators") + geom_abline() + labs(title = "Deficient Liquidators", x = "Total Collateral(USD)", y = "Total Principal(USD)", color = "Total transactions")
+
+dfst <- dfst[order(dfst$percent),]
+
+dfst <- dfst %>% rownames_to_column('user_number') 
+
+dfst$user_number <- as.integer(dfst$user_number)
+
+plot2 <- ggplot(dfst,aes(y = percent, x = user_number)) + geom_bar(stat="identity", position=position_dodge()) + labs(title = "Collateral-Principal Percent Distribution", x = "Deficient Liquidators (ordered by percent)", y = "Collateral-Principal Percent")
+
+#ggplotly(plot)
+
+plot
+
+plot2
+```
+
+The graph above shows the data on deficient liquidators. There are 154 deficient liquidators in our data (people who made at least 1 deficient liquidation). All of the figures above were built around total numbers for collateral and principal used in all deficient liquidations for different users. Collateral-Principal percent in the table (and barplot) means total_collateral/total_principal * 100. As we can see from the table, both the number of deficient liquidations and the percent can be different. Number of deficient liquidations is skewed towards low numbers, which makes sense since we do not expect users to make a lot of deficient liquidations. At the same time, percent varies a lot from low numbers to high numbers. 
+
+Additionally the barplot above was created just to illustrate the distribution of percent variable over deficient liquidators. It looks like some deficient liquidations cannot be explained by just small fluctuations in price: the percent for many users is way below 50, which means the difference between principal and collateral values was very significant. From the graph, we can tell that there are two outliers: users that did several liquidations with very big trading volume, and probably lost a lot of money due to these liquidations. Other than that, the rest of the users are concentrated near (0,0) and never exceed 300000 USD in collateral and 170000 USD in principal. 
+
+```{R, echo=FALSE}
+#deficient users data
+defusers <- df %>% filter(user %in% dfst$user)
+
+defusers_liq <- defusers %>% filter(type == "liquidation") 
+
+defusers_liq$deficiency <- mapply(defLiquid,defusers_liq$amountUSDPincipal,defusers_liq$amountUSDCollateral)
+
+defusers_liq <- defusers_liq %>% group_by(user) %>% summarize(num = n(), num_def = sum(ifelse(deficiency,1,0))) %>% mutate(percent_def = num_def/num * 100)
+
+kable(head(defusers_liq,10))
+
+defusers_liq <- defusers_liq[order(defusers_liq$percent_def),]
+
+defusers_liq <- defusers_liq %>% rownames_to_column('user_number') 
+
+defusers_liq$user_number <- as.integer(defusers_liq$user_number)
+
+plot3 <- ggplot(defusers_liq,aes(y = percent_def, x = user_number)) + geom_bar(stat="identity", position=position_dodge()) + labs(title = "Deficiency Percent Distribution", x = "Deficient Liquidators (ordered by deficiency percent)", y = "Deficiency Percent")
+
+plot3
+
+```
+
+Let's take a look into these deficient liquidators more closely. First let's check how regular vs deficient liquidations they make. The table (part is shown) gives us some insights. First, we observe a lot of deficient liquidators made only a few liquidations overall, sometimes even one liquidation in total (and it was deficient). However, there are some users that made a lot of liquidations, sometimes even more than 40 (and up to 5 deficient ones). We can also take a look into deficiency percent (ratio of number of deficient liquidations over all liquidations done by particular user) of the deficient liquidators. The barplot shows the distribution of this parameter over users. Its easy to see that there are some flat parts in the barplot. This is because a lot of users made a few liquidations and many of them got the same deficiency percent (i.e. 100% is usually 1 deficient liquidation/ 1 liquidation total). Besides this group of few-time liquidators, we can see that some users have their deficiency percent really close to 0, which means they make a lot of profitable liquidations and a few deficient ones may be just a coincidence (or they did them for some good, yet unknown reason).
+
+
+### Discussion
+
+We can draw a few conclusions on how deficient liquidators behave.
+
+One important observation is that deficient liquidations are distributed almost equally in terms of deficiency percent. This, at least partially, eliminates the hypothesis that deficient liquidations are all due to small price fluctuations because in this case we would only see deficient liquidations with at least 90% of collateral-principal percent. At the same time, some liquidations still have high collateral-principal percent, which means they can be explained by price fluctuations. Another important aspect of deficient liquidators is that many of them made only a few transactions. This could explain some of the deficiency liquidations since inexperienced users are more likely to make mistakes and are more likely to just liquidate all the loans available for liquidation. At the same time, there are also some experienced users with many liquidations, which means there might still be some (hidden) incentive for them to make those liquidations. This kind of incentive has to be outside of AAVE platform and has not to be related to prices of cryptocurrencies directly.
+
+Therefore, we can hypothesize three main reasons for deficient liquidations: small price fluctuations, which result in liquidations with very high collateral-principal ratio, inexperienced users, which might accidentally make non-profitable liquidation calls, and some external reasons. The last reason seems to be the most important, yet it cannot be learned from the data directly. We can imagine what kind of reason it could be. One guess is that the users want to liquidate even non-profitable loans just to get the cryptocoin that was used as a collateral by borrowers. This can happen if they believe this coin could have a much higher value in the future and they are ready to wait for this to happen. 
+
+## Problem 2: Good Liquidators
+
+One of the most important groups of liquidators is so-called good liquidators. Good liquidators are defined as a group of AAVE users that made profit of at least $100,000 out of liquidations only. These users serve as a good model for any other liquidators on how to make money of liquidations. So, we wanted to study how these users behave, see if there is anything special about them, and find what actions they take in AAVE to be so successful. The eventual goal was to find some kind of "recipe" of a good liquidator.
+ 
+### Methods
+
+In order to analyze good liquidators, we first created a new data frame for liquidators (which was created based on the existing data frame on transactions). Then, this data frame was filtered to only contain information on good liquidators. This data frame was analyzed from various points of view, different statistics were collected and reflected on the graphs and tables.
+	
+### Results
+
+```{R, echo=FALSE}
+#create groups: deficient and regular users
+dfst <- df %>% filter(type == "liquidation") %>%  filter(amountUSDCollateral<amountUSDPincipal)
+
+dfst$collateralType <- mapply(coinType, dfst$collateralReserve)
+dfst$principalType <- mapply(coinType, dfst$principalReserve)
+
+dfst <- dfst %>% group_by(user) %>% summarize(num_def = n(),total_collateral = sum(amountUSDCollateral), total_principal = sum(amountUSDPincipal)) %>% mutate(percent = total_collateral/total_principal * 100)
+
+dfst <- dfst[order(dfst$percent),]
+
+dfst <- dfst %>% rownames_to_column('user_number') 
+
+dfst$user_number <- as.integer(dfst$user_number)
+
+defusers <- df %>% filter(user %in% dfst$user)
+
+bd_def <- defusers %>% group_by(type) %>% summarize(n=n())%>% mutate(percent = n/sum(n)*100)
+
+bd_reg <- df %>% group_by(type) %>% summarize(n=n())%>% mutate(percent = n/sum(n)*100)
+
+bd_def$group <-'deficient_liquidators'
+
+bd_reg$group <-'regular_users'
+
+bd_joint <- rbind(bd_def, bd_reg)
+
+#Good liquidators: those that make profit from liquidations
+#Extension from previous work
+
+dfl <- df %>% filter(type == "liquidation") %>% group_by(user_alias) %>% summarize(total_collateral = sum(amountUSDCollateral), total_principal = sum(amountUSDPincipal), avg_collateral = mean(amountUSDCollateral), avg_principal = mean(amountUSDPincipal), num_transact = n()) %>% mutate (total_profit = total_collateral - total_principal, avg_profit = avg_collateral - avg_principal)
+
+dfl <- dfl[order(-dfl$total_profit),]
+
+dfl <- dfl %>% filter(total_profit > 100000 )
+
+#dfl
+
+plot_liq <- dfl %>% ggplot(aes(x = total_collateral, y = num_transact, color = total_profit)) + geom_point() + scale_color_gradientn(colours = rainbow(5)) + labs(title = "Good Liquidators", x = "Total Collateral(USD)", y =  "Number of Liquidations", color = "Total Profit")
+
+plot_liq
+
+dfl_all <- df %>% filter(df$user_alias %in% dfl$user_alias)
+
+#dfl_all
+
+bd_liq <- dfl_all %>% group_by(type) %>% summarize(n=n())%>% mutate(percent = n/sum(n)*100)
+
+bd_liq$group <-'good_liquidators'
+
+bd_joint <- rbind(bd_joint,bd_liq) 
+
+plot <- ggplot(data=bd_joint, aes(x=type, y=percent, fill=group)) +
+geom_bar(stat="identity", position=position_dodge()) + ggtitle("Deficient Liquidators, Best Liquidators, and All Users \n by Types of Transactions")
+
+plot
+
+```
+
+The graph and barplot above show the information on best liquidators(liquidators that made at least 100000 USD profit from liquidations). The plot compares number of liquidations and total collateral claimed in all of liquidations for best liquidators. Colors correspond to amount of profit (collateral - principal) gained in these transactions.
+
+One trend that we observe is that the most profitable liquidators (green, blue, purple points on graph) all have more than 10 liquidations and, most importantly, also claimed a lot of collateral. So, it looks like liquidators have to liquidate loans of high volume in order to make most of the profit. The strategy of just doing a lot of low-volume liquidations does not show to be profitable.  
+
+The barplot extends the barplot from the beginning of this notebook by adding good_liquidators column. So, we can now compare all three groups: deficient liquidators, good(best) liquidators, and regular users. As we can see from the barplot, all three groups look very different in terms of types of transactions they do. Speaking of good liquidators in particular (the two other groups were summarized above), they seem to do less liquidations compared to deficient liquidators. We can guess that they probably aim for high-volume liquidations more rather than number of liquidations and also they probably do a lot of other transactions just to collect more profit. High numbers for borrow and repay could have the following explanation: good liquidators have to borrow a lot in order to collect money for liquidation, once a loan is liquidated they pay back the loans.
+
+```{R, echo=FALSE}
+#Time-series plot good vs normal liquidations
+dfl_all_time <- dfl_all %>% filter(type == "liquidation")
+
+dfliq <- df %>% filter(type == "liquidation")
+
+#print(dfliq)
+
+colors <- c("Good Liquidators" = "red", "All Liquidators" = "black")
+
+dfl_time_plot <- ggplot(data = dfliq, aes(x = as_datetime(timestamp, tz = "UTC"),y = amountUSDCollateral, color = "All Liquidators")) + geom_point() + geom_point(data = dfl_all_time, aes(x = as_datetime(timestamp, tz = "UTC"),y = amountUSDCollateral,color = "Good Liquidators")) + labs(title = "Liquidations over Time", x = "Time", y =  "Collateral in Liquidation (USD)", color = "Legend") + scale_color_manual(values = colors) + scale_y_continuous(labels = scales::comma)
+
+dfl_time_plot
+
+```
+
+Let's now compare how many liquidations are due to good liquidators. First, let's take a look at the graph of liquidations over time. The black points are liquidations by all users and red points are liquidations by the good liquidator group. Visually, it looks like good liquidators make about 50% of liquidations, which is not true. Actually, there are only 547 liquidations from good liquidators, whereas all users made 6731 liquidations total (so about 8% are from good liquidators). Another interesting observation is that all points that have a lot of collateral are red, which means good liquidators focus more on those types of liquidations (and make their profit due to doing these liquidations). The high-volume liquidations are possible only at times of instability (i.e. Chinese Crypto Ban), which is very good for liquidators.
+
+### Discussion
+
+We have seen a few interesting details on how good liquidators behave. Let us summarize some of these trends (at least at high level). First, all good liquidators have made quite a lot of liquidations (the average is slightly below 20) compared to regular users. However, the most profitable liquidators do not make too many liquidations. Second, most of liquidation calls good liquidators make are of high value (in USD), this is how they compensate for low number of liquidation transactions. However, we see almost no users with very high number of low-level liquidations that are present in this group of good liquidators. Thirdly, the factor of time is extremely important for good liquidators. We see only a few liquidations made by users from good liquidators group that were made at times when there are no liquidation spikes. This means, good liquidators are active particularly during times with a lot of liquidations. This allows them to get those high-value liquidations we talked above. Lastly, good liquidators are usually very good AAVE users in general (not only in liquidation), they have a lot of other transactions and particularly the amount of borrow transactions seems to be very high. The hypothesis for that is that those borrow transactions are used to get cryptocurrency for high-volume liquidation calls (probably in the form of flash loans).
+
+
+# Summary and Recommendations
+
+We can draw a few different trends based on our analysis.
+
+First, It looks like
+
+Second, there are obviously different groups of liquidators and we can see that different groups have different patterns of behavior. We can study and analyze these patterns in more detail (some analysis is already present in this paper). 
+
+There are also a few different recommendations on how this work can be continued. 
+
+In general, we should always think on how the analysis we do can be useful for eventual users, readers, etc. So, it is always better to focus on parts of the work that can potentially form a basis for becoming useful in the future.
+
+I think the further development of topics present in my paper can potentially be useful in understanding how liquidations in AAVE are used by users. Potentially, we can use this information (on both Deficient and Good Liquidators) to make better decisions (be better liquidators) in AAVE. This topic can actually be studied in more detail and I think we can get better insights if we look deeply into those groups of users (maybe even at the level of individual transactions they make). Ideally, we would like to be able to write good smart contracts that would make those liquidations, or, at the very least, understand what features are required for good liquidation smart contracts.
+
+I doubt, however, that it will be possible to actually predict liquidations based on the information available. It looks like liquidations are greatly affected by price changes, which depend on many different things (news, state of economy, etc.). This kind of analysis may be extremely complicated, which is probably the reason why we should not focus on it.

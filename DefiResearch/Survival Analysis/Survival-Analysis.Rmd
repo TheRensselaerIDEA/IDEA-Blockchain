@@ -1,0 +1,370 @@
+---
+title: "Survival Analysis of Loans in AAVE"
+subtitle: "DeFi Assignment 3"
+author: "Aaron Micah Green"
+date: "09/29/2021"
+output:
+  pdf_document: default
+  html_document:
+    toc: true
+    number_sections: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+# CAUTION: DO NOT interrupt R as it installs packages!!
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dp)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+if (!require("plotly")) {
+  install.packages("plotly")
+  library(plotly)
+}
+if(!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+if(!require("survival")) {
+  install.packages("survival")
+  library(survival)
+}
+if(!require("survminer")) {
+  install.packages('survminer')
+  library(survminer)
+}
+if(!require("ranger")){
+  install.packages("ranger")
+  library(ranger)
+}
+if(!require("ggfortify")){
+  install.packages("ggfortify")
+  library(ggfortify)
+}
+if(!require("crypto2")){
+  install.packages("crypto2")
+  library(crypto2)
+}
+if(!require("ether")){
+  install.packages("ether")
+  library(ether)
+}
+
+
+```
+
+# Prepare Transaction Data
+
+We begin by loading our prepared AAVE transaction data into a dataframe. The dataset has over 400,000 rows, and 27 columns. 
+
+We are directly loading the dataframe from an Rds archive instead of a CSV file to conserve space. 
+
+```{r}
+source("~/Grad School/Research/Bennett's Content/DeFi Git/IDEA-Blockchain/DefiResearch/Utility Notebooks/loadData.r")
+```
+
+# Convert Data to Appropriate Format for Survival Analysis
+  For tracking loans we can filter out all but a few features of the data:
+  
+```{r}
+timeFinal <- max(df$timestamp)
+```
+
+## Borrow to Repay Analysis:
+```{r}
+borrowStatus <- bind_rows(borrows, repays) %>%
+  mutate(user = onBehalfOf, user_alias = onBehalfOf_alias) %>%
+  group_by(user, reserve) %>%
+  arrange(timestamp) %>%
+  mutate(loanBalance = cumsum(if_else(type == "borrow", amountUSD, -amountUSD))) %>%
+  mutate(loanDuration = max(timestamp) - min(timestamp)) %>%
+  slice_max(timestamp)
+
+
+loanDataTimeToRepay <- left_join(borrows,repays,by=c("user", "reserve")) %>%
+  dplyr::rename(borrowTime=timestamp.x) %>%
+  dplyr::rename(repayTime=timestamp.y) %>%
+  group_by(user, reserve) %>%
+  dplyr::summarise(timeDiff=case_when(min(repayTime)-min(borrowTime)>0 ~ min(repayTime)-min(borrowTime), 
+                                      TRUE ~ min(borrowTime) - timeFinal)) %>%
+  mutate(status=case_when(timeDiff<=0 ~ 0, timeDiff>0 ~ 1)) %>%
+  mutate(timeDiff = abs(timeDiff))%>%
+  
+  select(user,reserve,timeDiff,status)%>%
+  ungroup()
+
+loanCountReserve <- loanDataTimeToRepay %>%
+  count(reserve) %>%
+  arrange(-n)
+
+loanDataKMStable <- loanDataTimeToRepay %>%
+  left_join(reserveTypes) %>%
+  filter(reserve %in% head(loanCountReserve, 10)$reserve, reserveType=="Stable")
+
+km_fitStable <- survfit(Surv(as.numeric(timeDiff/86400), as.numeric(status)) ~ reserve, data=loanDataKMStable)
+
+kmPlotStable <- ggsurvplot(km_fitStable, xlab="Time (days)", ylab="Probability of No Repays", title="How Long Do Users Wait to Repay Loans (Stable Coins)?", legend.title="", censor=FALSE, conf.int = TRUE)
+
+kmPlotStable
+```
+```{r}
+loanDataKMNonStable <- loanDataTimeToRepay %>%
+  left_join(reserveTypes)
+
+km_fitNonStable <- survfit(Surv(as.numeric(timeDiff/86400), as.numeric(status))~reserveType, data=loanDataKMNonStable)
+
+coinTypesMedianSurv <- surv_median(km_fitNonStable)
+
+km_plotNonStable <- ggsurvplot(km_fitNonStable, xlab="Time (days)", ylab="Probability of No Repays", title="How Long Do Users Wait to Start Repaying Loans?", legend.title="", censor = FALSE)
+
+km_plotNonStable
+```
+```{r}
+cox <- coxph(Surv(as.numeric(timeDiff/86400), as.numeric(status)) ~ reserveType, data=loanDataKMNonStable)
+summary(cox)
+```
+```{r}
+km_fitAllCoins <- survfit(Surv(as.numeric(timeDiff/86400), as.numeric(status))~reserve, data=loanDataTimeToRepay)
+medianTimeToRepay <- surv_median(km_fitAllCoins) %>%
+  arrange(median)
+
+kable(medianTimeToRepay)
+
+ggsurvplot(km_fitAllCoins, xlab="Time (days)", ylab="Probability of No Repays", title="How Long Do Users Wait to Start Repaying Loans?", legend = "none", censor = FALSE)
+```
+
+```{r}
+kable(coinTypesMedianSurv)
+medianTimeToRepay <- medianTimeToRepay %>%
+  mutate(reserve = str_sub(strata, start=9))%>%
+  left_join(reserveTypes)
+
+kable(medianTimeToRepay)
+
+densityPlotTimeToRepay <- medianTimeToRepay  %>%
+  ggplot(aes(x=median, color=reserveType)) + geom_density() +
+  xlab("Time Elapsed Before Loan Repayment (in Days)") +
+  ylab("Proportion of Users") +
+  ggtitle("How Long Do Users Take to Repay Loans?")
+
+densityPlotTimeToRepay
+```
+## Borrow To Liquidation Analysis:
+```{r}
+df2 <- left_join(df, reserveTypes, by="reserve") %>%
+  distinct()
+
+numLiqPerUser <- liquidations %>%
+  group_by(user) %>%
+  summarise(numLiquidations = n())
+  
+
+aggregateLiquidations <- df2 %>%
+  filter(user %in% numLiqPerUser$user) %>% # First, let's filter out all users who have never been liquidated.
+  group_by(user) %>%                       # The next set of logic is to sort users' transactions by timestamp and pull out all liquidations that are
+  arrange(timestamp) %>%                   # part of a consecutive set of liquidations.
+  mutate(nextTransaction = lead(type)) %>%
+  mutate(prevTransaction = lag(type)) %>%
+  filter(type == "liquidation" & (nextTransaction == "liquidation" | prevTransaction == "liquidation"))  %>%
+  mutate(liquidationDay = floor_date(as_datetime(timestamp), unit = "day")) %>% # Then we want to use some approximation for the timeframe of this liquidation event, so we naively group consecutive liquidations by the day on which they took place.
+  group_by(user,liquidationDay) %>% # Doing this means that we can group by user and liquidationDay, which is functionally grouping by "liquidation event"
+  mutate(liquidationDuration = max(timestamp) - min(timestamp)) %>% # Now we can compute some basic stats about the event.
+  mutate(liquidationStart = min(timestamp), liquidationEnd = max(timestamp)) %>%
+  mutate(liquidationStartDatetime = as_datetime(liquidationStart), liquidationEndDatetime = as_datetime(liquidationEnd)) %>%
+  mutate(reserve = collateralReserve) %>%
+  left_join(reserveTypes, by = "reserve") %>%
+  rename(collateralType = reserveType.y) %>%
+  mutate(reserve = principalReserve) %>%
+  left_join(reserveTypes, by = "reserve") %>%
+  rename(principalType = reserveType) %>%
+  mutate(totalCollateralUSD = sum(amountUSDCollateral), totalPrincipalUSD = sum(amountUSDPrincipal))%>%
+  mutate(numLiquidations = n()) %>%
+  summarise(user_alias, numLiquidations, liquidationDuration, liquidationStart, liquidationEnd, liquidationStartDatetime, liquidationEndDatetime,
+            collateralReserves = str_flatten(str_sort(unique(collateralReserve)), collapse = ","), 
+            collateralTypes = str_flatten(str_sort(unique(collateralType)), collapse= ","),
+            principalReserves = str_flatten(str_sort(unique(principalReserve)), collapse = ","),
+            principalTypes = str_flatten(str_sort(unique(principalType)), collapse = ","),
+            totalCollateralUSD, totalPrincipalUSD, liquidationType = str_c(principalTypes, collateralTypes, sep = ":")) %>%
+  distinct()
+
+numAggregateLiqPerUser <- aggregateLiquidations %>%
+  group_by(user) %>%
+  summarise(user_alias, numLiquidations = n()) %>%
+  distinct()
+
+loanDataTimeToLiquidate <- left_join(borrows,aggregateLiquidations,by=c("user")) %>%
+  rename(borrowTime=timestamp) %>%
+  rename(liquidationTime=liquidationStart) %>%
+  group_by(user) %>%
+  mutate(timeDiff=case_when(min(liquidationTime)-borrowTime>0 ~ min(liquidationTime)-min(borrowTime), 
+                                      TRUE ~ borrowTime - timeFinal)) %>%
+  mutate(status=case_when(timeDiff<=0 ~ 0, timeDiff>0 ~ 1)) %>%
+  mutate(timeDiff = abs(timeDiff))%>%
+  select(user,reserve,principalReserves,collateralReserves,principalTypes,collateralTypes,liquidationType,timeDiff,status) %>%
+  distinct()
+
+loanDataTimeToLiquidate <- left_join(loanDataTimeToLiquidate, reserveTypes, by="reserve") %>%
+  mutate(liquidationType2 = if_else(!is.na(collateralTypes), paste(reserveType, collateralTypes, sep=":"), "NA"))
+
+loanDataTimeToLiquidate$liquidationType2 <- na_if(loanDataTimeToLiquidate$liquidationType2, "NA")
+
+liquidationCounts <- loanDataTimeToLiquidate %>%
+  group_by(liquidationType) %>%
+  summarise(liquidationCount = n())
+
+liquidationCounts
+```
+
+```{r}
+loanDataTimeToLiquidate <- loanDataTimeToLiquidate %>%
+  mutate(timeDiffDays = as.numeric(timeDiff/86400)) %>%
+  mutate(timeDiffWeeks = as.numeric(timeDiffDays/7))
+km_fitTimeToLiquidate <- survfit(Surv(timeDiffDays, as.numeric(status)) ~ liquidationType2, data=loanDataTimeToLiquidate)
+
+kmPlotTimeToLiquidate <- ggsurvplot(km_fitTimeToLiquidate, xlab="Time (Weeks)", ylab="Probability of No Liquidation", title="How Long Do Different Types of Loans Last Before Liquidation?", legend.title="Principal:Collateral", censor=FALSE, conf.int = FALSE, legend="right", ylim=c(0, 1))
+
+kmPlotTimeToLiquidate
+```
+```{r}
+
+```
+
+```{r}
+cox <- coxph(Surv(as.numeric(timeDiff/86400), as.numeric(status)) ~ liquidationType, data=loanDataTimeToLiquidate)
+summary(cox)
+coxPlot <- cox.zph(cox)
+ggcoxzph(coxPlot)
+```
+```{r}
+medianTimeToLiquidate <- surv_median(km_fitTimeToLiquidate) %>%
+  arrange(median)
+
+kable(medianTimeToLiquidate)
+
+medianTimeToLiquidate <- medianTimeToLiquidate %>%
+  mutate(liquidationType2 = str_sub(strata, start=18)) 
+
+densityPlotTimeToLiquidate <- medianTimeToLiquidate  %>%
+  ggplot(aes(x=median, color=liquidationType2)) + geom_density() +
+  xlab("Time Elapsed Before Liquidation (in Days)") +
+  ylab("Proportion of Users") +
+  ggtitle("How Long Do Loans Last Before Liquidation?")
+
+densityPlotTimeToLiquidate
+```
+
+```{r}
+allSurvivalData <- left_join(borrows,liquidations,by="user") %>%
+  dplyr::group_by(user) %>%
+  dplyr::mutate(age=case_when(is.na(timestamp.y) ~ max(borrows$timestamp)/86400,
+                              TRUE ~ (min(timestamp.y)-min(timestamp.x))/86400)) %>%
+  dplyr::mutate(status=case_when(age==max(borrows$timestamp)/86400 ~ 0,
+                                 TRUE ~ 1)) %>%
+  dplyr::filter(age>=0) %>%
+  dplyr::rename(principalReserve=principalReserve.y) %>%
+  dplyr::rename(collateralReserve=collateralReserve.y) %>%
+  dplyr::rename(borrowRateMode=borrowRateMode.x) %>%
+  dplyr::select(user,age,status,principalReserve,collateralReserve,borrowRateMode)
+```
+
+We see the barplots below:
+
+```{r, echo=FALSE, fig.width=7,fig.height=6,fig.cap="Count Distribution for Collateral Reserve"}
+ggplot(allSurvivalData, aes(x=collateralReserve)) + 
+  geom_bar(stat="count") + 
+  xlab("Collateral Reserve") +
+  ylab("Count") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ggtitle("Collateral Reserve Distribution for Survival Data")
+```
+
+In Figure 3, the barplot shows that the reserves LINK, WBTC, and WETH all have more than 15,000 records of a user using one of those coins as collateral for a borrow, so we will use those strata when plotting survival on collateral reserve.
+\newpage
+
+```{r, echo=FALSE, fig.width=7,fig.height=6,fig.cap="Count Distribution for Principal Reserve"}
+ggplot(allSurvivalData, aes(x=principalReserve)) + 
+  geom_bar(stat="count") + 
+  xlab("Principal Reserve") +
+  ylab("Count") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ggtitle("Principal Reserve Distribution for Survival Data")
+```
+
+The barplot in Figure 4 shows that DAI, USDC, and USDT are by far the most used for principal reserve, meaning that the vast majority of the time, users borrow stablecoins. We will use these three reserves as strata when plotting survival on principal reserve.
+\newpage
+
+We now move on to the plotting of the survival curves.
+
+```{r, echo=FALSE, fig.width=7,fig.height=6,fig.cap="General Survival Model"}
+km_fit_all <- survfit(Surv(age, status) ~ 1, data=allSurvivalData)
+ggsurvplot(km_fit_all,conf.int=TRUE,xlim=c(0,200),break.time.by=25,surv.median.line="hv") +
+  xlab("Time (Days)") +
+  ggtitle("Survival of Borrow until Liquidation")
+```
+
+
+```{r, echo=FALSE, fig.width=7,fig.height=6,fig.cap="Survival Model by Borrow Rate Mode"}
+km_fit_brm_all <- survfit(Surv(age, status) ~ borrowRateMode, data=allSurvivalData)
+ggsurvplot(km_fit_brm_all,conf.int=TRUE,xlim=c(0,200),break.time.by=25,legend.labs=c("Stable Rate","Variable Rate"),surv.median.line="hv") +
+  xlab("Time (Days)") +
+  ggtitle("Survival of Borrow until Liquidation by Borrow Rate Mode")
+```
+
+
+
+```{r, echo=FALSE, fig.width=7,fig.height=6,fig.cap="Survival Model by Collateral Reserve"}
+km_fit_cr_all <- survfit(Surv(age, status) ~ collateralReserve, data=allSurvivalData %>%
+                           dplyr::filter(collateralReserve %in% c("LINK","WBTC","WETH")))
+ggsurvplot(km_fit_cr_all,conf.int=TRUE,xlim=c(0,200),legend.labs=c("LINK","WBTC","WETH"),surv.median.line="hv",break.time.by=25) +
+  xlab("Time (Days)") +
+  ggtitle("Survival of Borrow until Liquidation by Collateral Reserve")
+```
+
+```{r, echo=FALSE, fig.width=7,fig.height=6,fig.cap="Survival Model by Principal Reserve"}
+km_fit_pr_all <- survfit(Surv(age, status) ~ principalReserve, data=allSurvivalData %>%
+                           dplyr::filter(principalReserve %in% c("USDC","USDT","DAI")))
+ggsurvplot(km_fit_pr_all,conf.int=TRUE,xlim=c(0,200),legend.labs=c("USDC","USDT","DAI"),surv.median.line="hv",break.time.by=25) +
+  xlab("Time (Days)") +
+  ggtitle("Survival of Borrow until Liquidation by Principal Reserve")
+```

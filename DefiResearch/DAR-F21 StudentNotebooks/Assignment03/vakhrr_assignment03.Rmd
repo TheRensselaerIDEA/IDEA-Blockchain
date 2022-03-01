@@ -1,0 +1,240 @@
+---
+title: "DAR F21 Project Status Notebook: DeFi Coin Types"
+author: "Roman Vakhrushev (vakhrr)"
+date: "09/30/2021"
+output:
+  html_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+subtitle: "DeFi"
+---
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+# CAUTION: DO NOT interrupt R as it installs packages!!
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+if (!require("gplots")) {
+  install.packages("gplots")
+  library(gplots)
+}
+
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dp)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+
+```
+
+#Initial Attempt to Separate Coins
+
+After looking into the data, I was very interested in different usage patterns that could be observed in stable and non-stable coins. The features that seemed to separate non-stable coins from stable were total percents of deposit + redeem and borrow + repay. Therefore, I created the features and 
+
+```{r}
+
+  #Note: This code was the first attempt to do the coin analysis, it is rather long and inefficient. The later section includes code that does similar analysis in a much more better way, yet I would like to keep this code as it provides a number of programming solutions that could be useful in the future. 
+  
+  #Read data, create initial summary
+  df<-read_rds('../../Data/transactions.Rds')  
+  # Use deplyr to drop NA reserves, add the counts and then kep only the top 20
+  reservecoins <- df %>%  drop_na(reserve) %>% 
+  count(reserve) %>% 
+  arrange(-n) %>% 
+  head(20)
+
+  # Add the rank to help keep track of the reserve coins
+  reservecoins <- reservecoins %>% 
+    mutate(rank=1:nrow(reservecoins),.before=reserve)
+  
+  # List the results nicely with kable()
+  kable(reservecoins)
+
+  CoinSummary <- df %>% filter(reserve %in% reservecoins$reserve) %>%
+  group_by(reserve) %>% 
+  count(type) %>% 
+  mutate(percent = n/sum(n)*100)
+  
+  #Separate summary into different type of transactions
+  CoinSummaryDep <- CoinSummary %>% subset(type == 'deposit')
+  CoinSummaryBor <- CoinSummary %>% subset(type == 'borrow')
+  CoinSummaryRed <- CoinSummary %>% subset(type == 'redeem')
+  CoinSummaryRep <- CoinSummary %>% subset(type == 'repay')
+  
+  #Create separate summaries for our features: Borrow+Repay and Deposit+Redeem
+  CoinSummaryBorRep <- rbind(CoinSummaryBor, CoinSummaryRep)
+  CoinSummaryDepRed <- rbind(CoinSummaryDep, CoinSummaryRed)
+  
+  #Have to sum over correct column in order to compute percent correctly
+  CoinSummaryBorRep <- aggregate(percent ~ reserve, data=CoinSummaryBorRep, FUN=sum)
+  CoinSummaryDepRed <- aggregate(percent ~ reserve, data=CoinSummaryDepRed, FUN=sum)
+  
+  #Merge summaries in order to make a one summary that contains all the information
+  CoinSummary <- merge(CoinSummaryBorRep,CoinSummaryDepRed, by="reserve") %>%
+  rename(Borrow_Repay_Percent = percent.x, Deposit_Redeem_Percent = percent.y)
+  
+  #Have to create stability column manually in order to represent stable and non-stable coins
+  stability = c('non-stable','non-stable','stable','non-stable','stable','stable','non-stable','non-stable','non-stable','non-stable','stable','stable','non-stable','stable','stable','non-stable','non-stable','non-stable','non-stable')
+  
+  #This piece of code makes the first column of the dataframe to be a rownames column,
+  #which is important for heatmaps
+  NewCoinSummary <- CoinSummary
+  rownames(NewCoinSummary) <- NewCoinSummary[,1] #Assigning row names from 1st column 
+  NewCoinSummary[,1] <- NULL #Removing the first column
+  
+  NewCoinSummary <- data.matrix(NewCoinSummary)
+
+  #Initial Heatmap that was constructed, includes only new features
+  heatmap.2(NewCoinSummary,scale="column",cexRow=1,cexCol=1)
+  
+  CoinSummary$stability <- stability
+  
+  #Table
+  kable(CoinSummary)
+  
+  #Graphs
+  ggplot(CoinSummary,aes(Borrow_Repay_Percent, Deposit_Redeem_Percent, color=reserve)) + geom_point() + ggtitle("Coins in Feature Space")
+
+  ggplot(CoinSummary,aes(Borrow_Repay_Percent, Deposit_Redeem_Percent, color=stability)) + geom_point() + ggtitle("Stable and Non-Stable Coins in Feature Space")
+
+```
+As we can see from the results, the created features completely separate the two groups (stable and non-stable coins) from each other. In fact even one feature is enough, the other one is just for convenience. Non-stable coins are mostly deposits+redeem and stable coins are mostly borrow+repay. Even more interestingly, there is a huge gap between the two groups. 
+
+It also seems like almost all non-stable coins perform similarly in terms of the features except for AAVE coin, which is also 100% of deposits+redeems, and CRV token, which did not achieve even 80% of deposits + borrows (all other non-stable coins are 85%+). One reason of why non-stable group could behave this way would be high risks associated with borrowing non-stable coins, which could potentially drop in value and lead to liquidation. So, non-stable coins are just used for depositing mostly and are not very popular for borrowers.
+
+The stable group seems to be a bit more diverse. We have two coins that are around 60% of deposits+redeems (which is rather high for stable coins) these are DAI and SUSD. Then we have two other coins that are 45-50% deposits+redeems (TUSD,USDC) and the rest are about 40% deposits+redeems. Similarly, the reasons for these behaving in such a way could be similar to those for stable coins -- risk. It would also be very interesting to see if borrow rates for different coins correlate with these trends (and to study how borrow rates are actually created and adjusted) as it could potentially affect the trends as well (theoretically, high availability of some coins should affect the borrow rates).
+
+#More Detailed Analysis of Coin Types
+
+This time I decided to extend the analysis to not only features that I created, but also to other simple features available in the data right away. So, I added such features as amount of transactions of different type, average value of transactions in usd, total value of transactions in usd. The analysis targeted to identify some other types of coins (bot just stable vs non-stable)
+
+```{r}
+
+  # Create new coin summary to study other types of coins
+  CoinSummary <- df %>% filter(reserve %in% reservecoins$reserve) %>%
+  group_by(reserve) %>% 
+  count(type) %>%
+  mutate(percent = n/sum(n)*100) 
+  
+  #filter liquidations and swaps, group transactions by reserve and type and also create basic 
+  #statistic for each group
+  CoinSummary2 <- df %>% filter(reserve %in% reservecoins$reserve) %>% filter(type != "liquidation" & type!="swap") %>%
+  group_by(reserve,type) %>% summarize(avg_usd = mean(amountUSD),usd = sum(amountUSD),n=n()) %>% mutate(percent = n/sum(n)*100)
+  
+  #Now we have to move the data to wide format (for heatmap and table)
+  #These lines of code widen the data in appropriate format
+  CoinSummary2Wide <- CoinSummary2 %>% gather(variable, value, -(reserve:type)) %>%
+    unite(temp, type, variable) %>%
+    spread(temp, value)
+  
+  #Create new features(borrow+repay, deposit+redeem and their variations)
+  CoinSummary2Wide <- CoinSummary2Wide %>% mutate(bor_rep_percent=borrow_percent+repay_percent, bor_rep_n = borrow_n + repay_n, dep_red_percent=deposit_percent+redeem_percent, dep_red_n=deposit_n+redeem_n)
+  
+  kable(CoinSummary2Wide)
+  
+  #create row names for column names for heatmap
+  CoinSummary2Wide <- CoinSummary2Wide %>% rename(rowname = reserve) %>% column_to_rownames()
+  
+  #create separate bar for heatmap to indicate stability
+  stability_colored <- stability %>% replace(stability == 'non-stable','yellow') %>% replace(stability == 'stable','red')
+  heatmap.2(scale(CoinSummary2Wide),trace="none",RowSideColors = stability_colored,margin=c(10, 10))
+  #this is a regular version of heatmap with their scaling
+  #heatmap.2(CoinSummary2Wide,scale="column")
+
+  
+```
+  
+  The following heatmap summarizes the coin data in more details than the old graph. The bar on the left indicates stability of coins: red means stable, yellow non-stable. In the map lighter colors mean "more", darker mean "less".
+  
+  First of all, we see the clearly non-stable vs stable clusters we already saw on the graph. For example, the last 3 columns indicate that very well. 
+  
+  The first two rows show that USDC and USDT coins completely dominate the borrow-repay market. There are both a lot of transactions and a lot of usd amounts for borrow and repay for these coins, although percentages of these are similar to other stable coins. 
+  
+  Another observation is Wrapped Ether WETH, which completely dominates the redeem-deposit market in terms of transactions. There is some issue with usd amount for WETH in the data, so usd results for it are not correct. However, we clearly WETH is the most popular coin for depositing, although it is not used that much for borrowing (although total amount of borrows and repays is much higher compared to other non-stable coins). So good question is why people deposit WETH, what do they want to do with it? It may be used to be put as a collateral, but this data is currently unavailable. 
+  
+  There are some other "groups" that are hard to identify and understand. For example, we see the WBTC, YFI and XSUSHI have very high average borrow and repay transactions in usd, which is strange and interesting, knowing that total borrow and repay for these is very small. 
+  
+# Thoughts on Liquidation Prediction
+
+```{r}
+head(df%>% filter(type == "liquidation"))
+#collateralAmount - amount of collateral claimed (in corresponding currency)
+#c-l reserve - corresponding reserve
+#principalAmount - same for principal claimed
+#p-l reserve - same for reserve
+#principal/collateral amounts/prices in usd/eth
+
+head(df%>% filter(type == "borrow"))
+#onBehalfOf always same as user?
+
+users<-vector(length=3)
+count<-0
+while(count<=1){
+  success<-FALSE
+  while(!success){
+    #get random user
+    ruser<-sample(df$user,1)
+    
+    #check for valid number of transactions
+    length<-nrow(filter(df,user==ruser))
+    if (length>100 && length<300){
+      users[count]=ruser
+      success<-TRUE
+      count<-count+1
+    }
+  }
+}
+df.rusers<-filter(df, user %in%users)
+#kable(df.rusers)
+
+BorrowSummarySum <- df %>% filter(type == "borrow") %>% group_by(reserve) %>% summarize(sum(amountUSD))
+BorrowSummaryMean <- df %>% filter(type == "borrow") %>% group_by(reserve) %>% 
+summarize(mean(amountUSD))
+kable(BorrowSummarySum)
+kable(BorrowSummaryMean)
+```
+
+I think one of potential interesting topics to consider in the future would be liquidation prediction. However, after looking into the data, I have so thoughts that we would have to address before going into that.
+
+1. What events do we consider to be liquidations? Since there is no liquidation ID or anything similar, we have to understand when liquidation occurs in data and whether some group of liquidations (in a short period of time for one user) is to be considered one liquidation or several.
+
+2. Could we identify the borrower and liquidator for the same event? Could be tract users that liquidate a lot?
+
+3. What data do we want to predict liquidations from? It seems like currently we do not even know what resource (and how much) is being used for collateral when borrowing. This data is absolutely crucial and it is probably impossible to predict anything without it. 

@@ -1,0 +1,488 @@
+---
+title: "DAR F21 Project Status Notebook Assignment 6"
+author: "Jason Podgorski (GitHub: podgoj)"
+date: "10/30/2021"
+header-includes:
+  \usepackage{float}
+  \floatplacement{figure}{H}
+output:
+  html_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+subtitle: "DeFi"
+---
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+       
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+if (!require("reactable")) {
+  install.packages("reactable")
+  library(reactable)
+}
+if (!require("zoo")) {
+  install.packages("zoo")
+  library(zoo)
+}
+if (!require("plotly")) {
+  install.packages("plotly")
+  library(plotly)
+}
+if (!require("dygraphs")) {
+  install.packages("dygraphs")
+  library(dygraphs)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+})
+```  
+
+# GitHub
+
+Branch Name: dar-podgoj
+
+Files on GitHub:
+
+[podgoj_assignment06.Rmd](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/DefiResearch/StudentNotebooks/Assignment06/podgoj_assignment06.Rmd)
+
+[podgoj_assignment06.pdf](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/DefiResearch/StudentNotebooks/Assignment06/podgoj_assignment06.pdf)
+
+[podgoj_assignment06.html](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/DefiResearch/StudentNotebooks/Assignment06/podgoj_assignment06.html)
+
+[app.R](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/app/app.R)
+
+Issues:
+
+#89 Does dygraph work in shiny (Closed)
+
+#90 Develop Coin rate graphs for borrow and deposit and put it in shiny if possible (Closed)
+
+#91 Create plots that have rates and amounts on the same plot from time (In Progress)
+
+#96 Coin View Page (In Progress)
+
+
+# Overview & Problems Tackled 
+
+To start, I repeated my "bad borrow" statistical analysis with good borrows. My goal was to find the good borrowers in AAVE based on the statistic I defined and to see if this subset of users are less frequent liquidatees. What I found was that many users who consistently made good borrows still ended up being liquidated at some point. My next task was to create clean visualizations for the app we are building. Cole and I have been working on the coin section of the app. I have been focusing on the UI and Cole has been creating more intricate visualizations. I found that the package dygraphs, makes clean and interactive visuals for time series data.
+
+# Data Description
+
+The data used to tackle these problems is contained in the DefiResearch Data folder. I used transactionsv2.rds which contains user transaction data in AAVE from December 2020 to October 2021. The dataset contains over 50,000 unique users and tracks each transaction with features such as transaction type, amount, reserve used, collateral amount, and more. The other dataset used was rates.csv which contained the stable and variable borrow rates for each reserve through the same time period.
+
+```{r, echo=FALSE}
+# load Rds (binary version of csv file) into dataframe
+df <- read_rds('../../Data/transactionsv2.rds')
+```
+
+```{r, echo=FALSE}
+# create a new column in date format using timestamp variable
+df <- df[order(df$timestamp),]
+posixt <- as.POSIXct(df$timestamp, origin = "1970-01-01")
+df$date <- as.Date(posixt)
+```
+
+```{r, echo=FALSE, results=FALSE, message=FALSE, warning=FALSE}
+# load interest rates data
+rates <- read_csv('../../Data/rates.csv')
+```
+
+```{r, echo=FALSE}
+# create a new column in date format using timestamp variable
+rates <- rates[order(rates$timestamp),]
+rates_posixt <- as.POSIXct(rates$timestamp, origin = "1970-01-01")
+rates$date <- as.Date(rates_posixt)
+rates$datetime <- rates_posixt
+```
+
+# Results
+
+## Problem 1
+
+The problem I was looking to solve was a continuation of a previous notebook, where I sought out "bad borrowers" and tried to find patterns for how that kind of behavior impacted their portfolio. For this study, I looked at "good borrowers" and examined their borrowing habits. I defined a "good borrow" as a borrow made when the coin's borrow rate was between the minimum and first quartile of rates spanning January 2021 to October. The subset of users I focused on made at least 10 "good borrows" in either USDC, USDT, or DAI. I chose those coins because they are the most popular stable coins.
+
+### Methods
+
+To complete this study, I found all "good borrow" days with USDC, USDT, and DAI. I then kept track of all unique users who borrowed on those days to get their total number of good borrows and a percentage of all their borrows. From there I gathered a subset of users with 10+ transactions in a certain coin to do an exploratory analysis using Tableau.
+
+### Results
+
+```{r, echo=FALSE, results=FALSE}
+# calculate median variable and stable rates for USDC
+usdc_stableRates <- df %>%
+  group_by(date) %>%
+  filter(reserve == as.character("USDC") & borrowRateMode == "Stable" &
+         date >= "2021-01-01") %>%
+  summarize(stableRate = median(borrowRate))
+usdc_variableRates <- df %>%
+  group_by(date) %>%
+  filter(reserve == as.character("USDC") & borrowRateMode == "Variable" &
+         date >= "2021-01-01") %>%
+  summarize(variableRate = median(borrowRate))
+usdc_rates <- merge(usdc_stableRates, usdc_variableRates)
+head(usdc_rates)
+```
+
+```{r, echo=FALSE, results=FALSE}
+# calculate median variable and stable rates for USDT
+usdt_stableRates <- df %>%
+  group_by(date) %>%
+  filter(reserve == as.character("USDT") & borrowRateMode == "Stable" &
+         date >= "2021-01-01") %>%
+  summarize(stableRate = median(borrowRate))
+usdt_variableRates <- df %>%
+  group_by(date) %>%
+  filter(reserve == as.character("USDT") & borrowRateMode == "Variable" &
+         date >= "2021-01-01") %>%
+  summarize(variableRate = median(borrowRate))
+usdt_rates <- merge(usdt_stableRates, usdt_variableRates)
+```
+
+```{r, echo=FALSE, results=FALSE}
+# calculate median variable and stable rates for DAI
+dai_stableRates <- df %>%
+  group_by(date) %>%
+  filter(reserve == as.character("DAI") & borrowRateMode == "Stable" &
+         date >= "2021-01-01") %>%
+  summarize(stableRate = median(borrowRate))
+dai_variableRates <- df %>%
+  group_by(date) %>%
+  filter(reserve == as.character("DAI") & borrowRateMode == "Variable" &
+         date >= "2021-01-01") %>%
+  summarize(variableRate = median(borrowRate))
+dai_rates <- merge(dai_stableRates, dai_variableRates)
+head(dai_rates)
+```
+
+```{r, echo=FALSE, results=FALSE}
+# summarize borrow statistics
+print(summary(usdc_rates$stableRate))
+print(summary(usdt_rates$stableRate))
+print(summary(dai_rates$stableRate))
+```
+
+```{r, echo=FALSE, results=FALSE}
+# get dates where the stable rate is less than the first quartile
+usdc_g_borrow_days <- usdc_rates[usdc_rates$stableRate < 10.571,]$date
+usdt_g_borrow_days <- usdt_rates[usdt_rates$stableRate < 11.72,]$date
+dai_g_borrow_days <- dai_rates[dai_rates$stableRate < 11.846,]$date
+```
+
+```{r, echo=FALSE, results=FALSE}
+# filter out stable borrows from the main transaction dataset
+usdc_good_borrows <- df %>%
+  group_by(date) %>%
+  filter(borrowRateMode == "Stable" & reserve == as.character("USDC"))
+usdt_good_borrows <- df %>%
+  group_by(date) %>%
+  filter(borrowRateMode == "Stable" & reserve == as.character("USDT"))
+dai_good_borrows <- df %>%
+  group_by(date) %>%
+  filter(borrowRateMode == "Stable" & reserve == as.character("DAI"))
+```
+
+```{r, echo=FALSE, results=FALSE}
+# get borrows that occur on good borrow days
+usdc_good_borrows <- usdc_good_borrows[usdc_good_borrows$date %in% usdc_g_borrow_days,]
+usdt_good_borrows <- usdt_good_borrows[usdt_good_borrows$date %in% usdt_g_borrow_days,]
+dai_good_borrows <- dai_good_borrows[dai_good_borrows$date %in% dai_g_borrow_days,]
+```
+
+```{r, echo=FALSE, results=FALSE}
+# Percentage of good USDC borrows in 2021
+pct_usdc_g_borrows <- nrow(usdc_good_borrows) /
+nrow(df[df$borrowRateMode == "Stable" & 
+        df$reserve == as.character("USDC") & 
+        df$date >= "2021-01-01",])
+pct_usdc_g_borrows
+```
+
+```{r, echo=FALSE, results=FALSE}
+# Percentage of good USDT borrows in 2021
+pct_usdt_g_borrows <- nrow(usdt_good_borrows) /
+nrow(df[df$borrowRateMode == "Stable" & 
+        df$reserve == as.character("USDT") & 
+        df$date >= "2021-01-01",])
+pct_usdt_g_borrows
+```
+
+```{r, echo=FALSE, results=FALSE}
+# Percentage of good DAI borrows in 2021
+pct_dai_g_borrows <- nrow(dai_good_borrows) /
+nrow(df[df$borrowRateMode == "Stable" & 
+        df$reserve == as.character("DAI") & 
+        df$date >= "2021-01-01",])
+pct_dai_g_borrows
+```
+
+```{r, echo=FALSE}
+# create dataframe to use in bar chart 
+good_borrows_comparison_df <- data.frame(
+  reserve = c("USDC", "USDT", "DAI", "USDC", "USDT", "DAI"),
+  type = c("Actual", "Actual", "Actual", "Expected", "Expected", "Expected"),
+  value = c(pct_usdc_g_borrows * 100, 
+            pct_usdt_g_borrows * 100, 
+            pct_dai_g_borrows * 100,
+            length(usdc_g_borrow_days) / nrow(usdc_rates) * 100, 
+            length(usdt_g_borrow_days) / nrow(usdt_rates) * 100, 
+            length(usdc_g_borrow_days) / nrow(usdc_rates) * 100)
+)
+
+# Plot as a bar chart
+ggplot(good_borrows_comparison_df, aes(factor(reserve), value, fill = type)) + 
+  geom_bar(stat="identity", position = "dodge") +
+  geom_text(aes(label = round(value, digits = 2)), vjust = -0.2,
+            position = position_dodge(0.9)) +
+  xlab("Reserve") +
+  ylab("Percent") +
+  ggtitle("Percentage of Stable Borrows that Occur on Low Interest Rate Days")
+```
+
+![As a comparison, this is the same visual for high interest rate days.](bad_borrow_comparison.JPG)
+
+```{r, echo=FALSE, results=FALSE}
+# of USDC good stable borrowers, calculate good borrow percentage and frequency
+usdc_good_stable_borrowers <- usdc_good_borrows %>%
+  group_by(onBehalfOf_alias) %>%
+  filter(date >= "2021-01-01") %>%
+  summarize(usdc = n())
+usdc_stable_borrowers <- df %>%
+  group_by(onBehalfOf_alias) %>%
+  filter(borrowRateMode == "Stable" & 
+         reserve == as.character("USDC") & 
+         date >= "2021-01-01") %>%
+  summarize(usdc_pct = n())
+usdc_good_stable_borrowers <- merge(usdc_good_stable_borrowers, usdc_stable_borrowers)
+usdc_good_stable_borrowers$usdc_pct <- round(usdc_good_stable_borrowers$usdc / usdc_good_stable_borrowers$usdc_pct, digits = 2)
+head(usdc_good_stable_borrowers)
+```
+
+```{r, echo=FALSE, results=FALSE}
+# of USDT good stable borrowers, calculate good borrow percentage and frequency
+usdt_good_stable_borrowers <- usdt_good_borrows %>%
+  group_by(onBehalfOf_alias) %>%
+  summarize(usdt = n())
+usdt_stable_borrowers <- df %>%
+  group_by(onBehalfOf_alias) %>%
+  filter(borrowRateMode == "Stable" & 
+         reserve == as.character("USDT") & 
+         date >= "2021-01-01") %>%
+  summarize(usdt_pct = n())
+usdt_good_stable_borrowers <- merge(usdt_good_stable_borrowers, usdt_stable_borrowers)
+usdt_good_stable_borrowers$usdt_pct <- round(usdt_good_stable_borrowers$usdt / usdt_good_stable_borrowers$usdt_pct, digits = 2)
+head(usdt_good_stable_borrowers)
+```
+
+```{r, echo=FALSE, results=FALSE}
+# of DAI good stable borrowers, calculate good borrow percentage and frequency
+dai_good_stable_borrowers <- dai_good_borrows %>%
+  group_by(onBehalfOf_alias) %>%
+  summarize(dai = n())
+dai_stable_borrowers <- df %>%
+  group_by(onBehalfOf_alias) %>%
+  filter(borrowRateMode == "Stable" & 
+         reserve == as.character("DAI") & 
+         date >= "2021-01-01") %>%
+  summarize(dai_pct = n())
+dai_good_stable_borrowers <- merge(dai_good_stable_borrowers, dai_stable_borrowers)
+dai_good_stable_borrowers$dai_pct <- round(dai_good_stable_borrowers$dai / dai_good_stable_borrowers$dai_pct, digits = 2)
+head(dai_good_stable_borrowers)
+```
+
+```{r, echo=FALSE, results=FALSE}
+# merge dataframes into one for all good borrowers of Stable USDC, USDT, and DAI
+good_stable_borrowers <- merge(usdc_good_stable_borrowers, usdt_good_stable_borrowers, all = TRUE)
+good_stable_borrowers <- merge(good_stable_borrowers, dai_good_stable_borrowers, all = TRUE)
+good_stable_borrowers[is.na(good_stable_borrowers)] <- 0
+head(good_stable_borrowers)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+# interactive and filterable dataframe
+reactable(good_stable_borrowers)
+```
+
+This visual is an interactive dataframe and is more effective when viewing the html version.
+
+```{r, echo=FALSE, results=FALSE}
+# find good borrowers who have made at least 10 good borrows
+best_borrowers <- good_stable_borrowers[good_stable_borrowers$usdc >= 10 |
+                                        good_stable_borrowers$usdt >= 10 |
+                                        good_stable_borrowers$dai >= 10,]
+unique(best_borrowers$onBehalfOf_alias)
+```
+
+```{r, echo=FALSE, results=FALSE}
+# of the 69 good borrowers, find the ones who have liquidated
+best_borrowers_df <- df[df$onBehalfOf_alias %in% unique(best_borrowers$onBehalfOf_alias),]
+best_liquidators_df <- df[df$user_alias %in% unique(best_borrowers$onBehalfOf_alias),]
+best_liquidators_df <- best_liquidators_df[best_liquidators_df$type == "liquidation",]
+good_liquidator_users <- unique(best_liquidators_df$user_alias)
+good_liquidator_users
+```
+
+```{r, echo=FALSE, results=FALSE, warning=FALSE, include=FALSE}
+# create data set to analyze Etta Ferguson's transaction history
+# keep track of Etta's weekly cumulative totals for transaction type and reserve
+ettaF <- df[df$onBehalfOf_alias == "Etta Ferguson",]
+etta_liquidate <- df[df$user_alias == "Etta Ferguson" & df$type == "liquidation",]
+etta_liquidate <- etta_liquidate[c("principalReserve", "type", "principalAmount", "date")]
+colnames(etta_liquidate)[1] <- "reserve"
+colnames(etta_liquidate)[3] <- "amountUSD"
+ettaF <- ettaF[c("reserve", "type", "amountUSD", "date")]
+ettaF <- rbind(ettaF, etta_liquidate)
+maxDate <- max(ettaF$date)
+ettaF <- ettaF %>%
+  arrange(type, reserve) %>%
+  group_by(type, reserve) %>%
+  complete(date = seq.Date(min(date), maxDate, by="day", fill = 0)) %>%
+  ungroup()
+ettaF$week <- cut(as.Date(ettaF$date), "week")
+ettaF[is.na(ettaF)] <- 0
+ettaF <- ettaF %>% 
+  group_by(week, type, reserve) %>% 
+  summarize(week_sum_amountUSD = sum(amountUSD))
+ettaF <- ettaF %>% 
+  group_by(type, reserve) %>% 
+  mutate(csum_amountUSD = cumsum(week_sum_amountUSD))
+# create csv to visualize in Tableau
+write.csv(ettaF, "ettaF.csv")
+ettaF %>%
+  arrange(week)
+```
+
+```{r, echo=FALSE, results=FALSE}
+# Etta Ferguson's liquidation history
+etta_liquidate <- df[df$user_alias == "Etta Ferguson" & df$type == "liquidation",]
+etta_liquidate <- etta_liquidate[c("principalReserve", "type", "principalAmount", "date")]
+colnames(etta_liquidate)[1] <- "reserve"
+colnames(etta_liquidate)[3] <- "amountUSD"
+etta_liquidate
+```
+
+![Etta Ferguson portfolio before liquidation.](ettaF_tableau1.JPG)
+
+![Etta Ferguson portfolio at time of liquidation.](ettaF_tableau.JPG)
+
+### Discussion
+
+After finding the good borrowers in AAVE, there are 69 "best borrowers" (10+ borrows of the same coin on good borrow days). Of those 69 users, 39 of them have been liquidated in their past. This number was surprising to me because I found 69 of the best users in the entire protocol out of over 50,000 and over half have been liquidated. Note that only 5% of users in AAVE have had at least one liquidation. I examined one user, Etta Ferguson, in particular because Etta is a high-volume user with 171 total USDC borrows with 75% of them classified as good borrows. Etta was liquidated twice (in a 2 day span) with USDC so I decided to visualize her transaction history to get an idea of what her portfolio looked like when she was liquidated. What I noticed when analyzing Etta's portfolio before the liquidation is that she repayed her outstanding borrows in many different coins like BAL, ENJ, DAI, etc. but has neglected to repay any USDC for months on end. In the next visual, we see that Etta was liquidated for all of her previously owned USDC. This liquidation makes sense from a health factor perspective. How Etta fails to repay any of her USDC while repaying other coins is puzzling to me. All in all, I found Tableau to be a great tool to visualize a user's transaction history and will use the same visualization if other interesting users need to be examined.
+
+## Problem 2
+
+The problem I set out to solve was to create an all-encompassing coin section for the application we are building to allow users to explore AAVE on a coin-by-coin basis. This section should help the user learn how each coin is used throughout the protocol. Using the AAVE site and Nansen as a guide, I aimed to visualize similar features and metrics in a clean and interactive way. The initial plots I created were the stable and variable borrow rates through time, a comparison of the USD borrowed and repayed over time, and a comparison of the USD deposited and redeemed over time.
+
+### Methods
+
+To create the visualizations, I discovered the R package dygraphs. Dygraphs is a popular package for visualizing time series data in an interactive way. Dygraphs allows the user to hover over the lines to get specific values over time, filter the plot to display rolling averages for an inputted amount of time, and a slider capability to allow the user to only view the date ranges they desire.
+
+### Results
+
+```{r, echo=FALSE, results=FALSE, warning=FALSE}
+# create sample dygraphs using USDC
+usdc_rates <- rates[rates$reserve == as.character("USDC"),]
+head(usdc_rates)
+```
+
+```{r, echo=FALSE, results=FALSE, warning=FALSE}
+# create dataframe with median stable and variable borrow rates for each day
+usdc_rates <- usdc_rates %>%
+  select("date", "stableBorrowRate", "variableBorrowRate") %>%
+  group_by(date) %>%
+  summarize(stable = median(stableBorrowRate), variable = median(variableBorrowRate))
+head(usdc_rates)
+```
+
+```{r, echo=FALSE, results=FALSE, warning=FALSE, include=FALSE}
+# create dygraph for USDC stable and variable borrow rates over time
+
+# create time series object
+usdc_xts <- xts(x = cbind(usdc_rates$stable, usdc_rates$variable),
+                order.by = usdc_rates$date)
+
+dygraph(usdc_xts, main = "USDC Stable vs. Variable APR") %>%
+  dySeries("V1", label = "Stable") %>%
+  dySeries("V2", label = "Variable") %>%
+  dyOptions(labelsUTC = TRUE, fillGraph = TRUE, fillAlpha = 0.1, drawGrid = FALSE, 
+            colors = "#D8AE5A") %>%
+  dyRangeSelector() %>%
+  dyCrosshair(direction = "vertical") %>%
+  dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2,
+              hideOnMouseOut = FALSE)  %>%
+  dyRoller(rollPeriod = 1) %>%
+  # format plot labels
+  dyAxis("y", valueFormatter = "function(v){return v.toFixed(1) + '%'}",
+         axisLabelFormatter = "function(v){return v + '%'}")
+```
+
+```{r, echo=FALSE, results=FALSE}
+# create dataframe with median USDC liquidity rates for each day
+usdc_liquid <- rates[rates$reserve == as.character("USDC"),]
+usdc_liquid <- usdc_liquid[c("date", "liquidityRate")]
+usdc_liquid <- usdc_liquid %>%
+  group_by(date) %>%
+  summarize(liquidity_rate = median(liquidityRate))
+```
+
+```{r, echo=FALSE, results=FALSE, warning=FALSE, include=FALSE}
+# create dypgrah with USDC liquidty rate over time
+
+# create time series object for dygraph
+usdc_liquid_xts <- xts(x = usdc_liquid$liquidity_rate, order.by = usdc_liquid$date)
+
+# create dygraph
+dygraph(usdc_liquid_xts, main = "USDC Liquidity Rate") %>%
+  dySeries("V1", label = "Liquidity Rate") %>%
+  dyOptions(labelsUTC = TRUE, fillGraph = TRUE, fillAlpha = 0.1, drawGrid = FALSE, 
+            colors = "#D8AE5A") %>%
+  dyRangeSelector() %>%
+  dyCrosshair(direction = "vertical") %>%
+  dyHighlight(highlightCircleSize = 5, highlightSeriesBackgroundAlpha = 0.2,
+              hideOnMouseOut = FALSE)  %>%
+  dyRoller(rollPeriod = 1) %>%
+  dyAxis("y", valueFormatter = "function(v){return v.toFixed(1) + '%'}",
+         axisLabelFormatter = "function(v){return v + '%'}")
+```
+
+![Initial layout to Coins Page. Changes to the design will be made as more plots are added.](app_layout.JPG)
+
+![Note: The full capabilities of dygraph are highlighted in the app itself.](stable_variable_rates.JPG)
+
+![Note: The full capabilities of dygraph are highlighted in the app itself.](borrow_repay.JPG)
+
+![Note: The full capabilities of dygraph are highlighted in the app itself.](deposit_redeem.JPG)
+
+### Discussion
+
+When getting feedback from the rest of the team, dygraphs seemed to be an effective way to plot time series data. I liked being able to manipulate the date range and calculate rolling averages on the fly. My only concern with dygraphs is that they can't be resized. This makes it difficult to compare multiple visualizations at the same time. Depending on the other visualizations included in the app, it may be beneficial to go back to ggplot and facet-grids. The last two visualizations with borrows vs. repays and deposits vs. redeems were Nansen replicated graphs for our data. These graphs replicate similar trends we would see from a survival analysis. A large borrow spike will usually have a large repay spike or multiple smaller spikes follow in the coming weeks. Cole and I will decide on the app layout when we get a better idea of the best set of visualizations to include.
+
+# Summary and Recommendations
+
+For the "good borrow" analysis, I believe clustering users by a certain criteria is a strong way for analyzing a user's patterns. From the tableau visualization, I was able to estimate the status of a user's portfolio and see what state they were in before liquidation. For my final notebook, I plan to expand my research with borrow rates. Since making borrows at high rates tends to lead more towards liquidation, I would like to explore forecasting borrow rates in order to help the user borrow on days with lower rates.
+
+For the app, the biggest decision to be made is how the coin page should be laid out. Currently, the user can filter by coin and date range to generate plots that fit those requirements. As a group, we need to decide if that's the best way to present the data or if a facet-grid approach is more optimal. I believe the dygraphs are a clean way of presenting the results. However, we aren't able to compare the coins side-by-side as easily which could make the ggplot facet-grid a better option.
+
+# References
+
+Documentation for dygraphs: [https://dygraphs.com/](https://dygraphs.com/)
+
+# Appendix
+
+Notebook discussing bad borrows: [podgoj_assignment05.pdf](https://github.rpi.edu/DataINCITE/IDEA-Blockchain/blob/master/DefiResearch/StudentNotebooks/Assignment05/podgoj_assignment05.pdf)

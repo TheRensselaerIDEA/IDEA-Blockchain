@@ -1,0 +1,265 @@
+---
+title: "MATP-4910  Final Project Notebook Template"
+author: "Christopher Cammilleri"
+date: "5 December 2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DeFi"
+---
+
+# Final Project: Github Info
+
+* github repository: 
+* Your github ID: cammic
+* Final notebook: dar_final_cammic_05122021.Rmd
+    
+* Summary of github contributions including github issues addressed.
+
+    * Added python notebook where visualizations on liquidatees/non-liquidatess was conducted (liquidations.ipynb)
+    
+* All code done on my own
+
+# Overview & Problems Tackled
+
+For my research, I investigated users who have received liquidations in Aave. Aave is a Decentralized Finance protocol in which users can deposit and borrow cryptocurrencies. Loans can be taken out by users for as long as they wish, so long as they posses the collateral required to maintain the loan principal and loan interest. When the ratio of amount borrowed to amount collateral gets too large, the loan may be liquidated. In this case, a liquidator may return some of the principal the user failed to repay, in return for a portion of the loan's collateral. My main research goals were as followed:
+
+* Investigate the patterns of behavior that belong to users who have received liquidations
+* Examine the connections between liquidators and liquidatees
+* Cluster users according to these patterns, and identify clusters with the highest risk
+
+# Data Description
+
+The data I used for this project was version 2 of the Aave user transaction data, titled transactionsv2.rds. The data was sourced from the Aave API hosted on https://thegraph.com/en/. I filtered out rows containing transactions made by the Aave protocol. The resulting data contains 685,824 rows and 34 columns. It spans the time period from November 30th, 2020, to October 17th 2021. 
+
+# Results
+
+## Problem 1 
+
+The first problem I set out to investigate was the patterns of behaviors belonging to users who liquidate. By doing this, we can see which factors distinguish the liquidatees from the non-liquidatees. This can help us to classify transactions which are "risky". 
+ 
+### Methods
+
+First, I identified whether each transaction belonged to a user who is a liquidatee. Then, I seperated in to the data in to transactions made by liquidatee's, and transactions made by non-liquidatee's. Using this data, I made several visualizations showing differences in transacions between liquidatees and non-liquidatees. 
+
+### Results
+
+To get a general idea of the number of users who get liquidated at some point, we start by making a bar chart showing the number of liquidatees and non-liquidatees. We can see that only a small number of users will end up receving a liquidation. Of the 51,419 users, only 1,993 are liquidatees. 
+
+![](fig1.PNG)
+
+Second, we look at the proportion of transaction types for each type of users. We a bar plot showing the proportion of transaction types for both groups of users. This visualization will give us an idea for the types of transactions that are common to liquidatees. From the chart, we can see that liquidatees have a large proportion of borrows in comparison to non-liquidatees, and a small proportion of redeems. This makes sense, as a liquidation happens when the amount a user borrows gets too large without being repaid.
+
+![](fig2.PNG)
+
+To follow, we investigate the number of days users spend active. To do this, we take the difference in time (in days) between a user's first transaction and a user's last transaction. We plot this data in boxplots, separating liquidatees and non-liquidatees. We see that liquidatees spend a significantly more amount of time active than other users. 
+
+![](fig3.PNG)
+
+Next, we examine the average number of transactions per type made by users. We create a bar plot showing the average number of transactions made by both groups of users, for each transaction type. Clearly, liquidatees make significantly more transactions across their activity period, for all types. 
+
+![](fig4.PNG)
+
+Finally, we look at the amount of money used in the different transaction types for both groups of users. We make boxplots for each transaction type for both groups showing the amounts of money used in the transactions, in USD. We see no significant difference in the median amount of money used. 
+
+![](fig5.PNG)
+
+### Discussion
+
+From these findings, we can see that there are three main ways to distinguish liquidatees form non-liquidatees - time active, transaction type proportions, and average number of transactions. A lot of the distinguishing factors make sense. For instance, lquidatees tend to be active linger. This intuitively makes sense, as the longer someone is active, the more likely they are to receive a liquidation. This same principal applies to the average number of transaction. The other factor, transaction amount, did not seem to have much of a significant difference between groups of users. 
+
+## Problem 2
+
+The next task that I wanted to investigate was the connections between liquidatees and liquidators. In Aave, a liquidation on a user is initiated by a liquidator, who hopes to receieve a profit from completing the transaction. In this section I examine a graph that connects liquidators with liquidatees. There are 193 liquidators represented in the data.
+ 
+### Methods
+
+We create a graph using the graphistry package in python. The nodes in this graph are liquidators and liquidatees. The nodes are connected by liquidation transactions from liquidators to liquidatees. 
+	
+### Results
+
+Below, is a zoomed out image of the graph. From this view, we can't observe much other than that there are many nodes and many connections. 
+
+![](graphzoom.PNG)
+
+Next, is a zoomed in image of the graph. Here, we can more closely see the connections between liquidators and liquidatees. We can see that some liquidators liquidate more than others, and some users receieve more than one liquidations from the same liquidator.
+
+![](graphzoom2.PNG)
+
+In addition, we examine the in-degree and out-degree of the graph. The out degree represents the number of liquidations liquidators execute. We can see that most liquidators only make about one liquidation - however, some of the largest liquidators have hundreds. 
+
+![](out.PNG)
+
+Here, we have the in-degree graph. This represents the number of liquidations liquidatees receive. The median is above one, which indicate that users who receive liquidations are likely to repeat this behavior. 
+
+
+
+### Discussion
+
+From the above analysis, we can observe that liquidatees are likely to have multiple liquidations over their lifetime. This could indicate that past liquidations are a good predictor of liquidations in the future. In addition, we can see that a small group liquidators represent the majority of liquidations. 
+
+## Problem 3
+
+The final task I set out to accomplish was to cluster users in a way that could classify them according to their liquidation risk. 
+
+### Methods
+
+The code for this task is provided below. We begin by importing the necessary libraries. 
+
+```{r}
+#import libraries
+library(ggplot2)
+library(ggbiplot)
+library(gplots)
+library(RColorBrewer)
+library(beeswarm)
+library(tidyverse)
+library(ggbeeswarm)
+library(foreach)
+library(doParallel)
+```
+
+We load version 2 of the transaction data in to a dataframe, and remove transactions done by the Aave protocol.
+
+```{r}
+#load in csv file to data frame
+df<-read_csv(file='~/Blockchain/transactions2.csv')
+
+#remove protocol smart contracts
+df<-filter(df,df$protocolContract==FALSE)
+
+head(df)
+```
+
+Next, we group users by the factors that distinguish liquidators and non-liquidators. These are the time a user is active, their proportion of transaction types, and number of each type of transaction.
+
+```{r}
+#group by user and get time of user's first and last transaction, as well as number of transactions
+df.users<- df%>%group_by(user)%>%
+  dplyr::summarise(timefirst=min(timestamp), timelast=max(timestamp), N=n())
+
+#get the time the user has been active
+df.users$timeactive<-df.users$timelast-df.users$timefirst
+
+#get user's transaction information
+for(Type in c(unique(df$type))){
+  #filter for only transactions of certain type
+  df.type <-filter(df%>%group_by(user)%>%
+                     dplyr::count(type),type==Type)
+  
+  #add counts of transaction types to df
+  ntypes<-paste("logn_",Type,sep='')
+  colnames(df.type)[3]<-ntypes
+  df.type<-df.type%>%replace(is.na(.),0)
+  df.type[ntypes]<-log(df.type[ntypes]+1)
+  
+  df.users<-merge(x=df.users,y=select(df.type,user,ntypes),by="user",all.x=TRUE)
+  
+  
+  #get proportion of transaction types and weekly number of transaction type
+  df.users[paste("p_",Type,sep='')]<-(df.users[ntypes])/((df.users$N))
+}
+
+head(df.users)
+```
+We clean the user data by replacing NaNs with 0s, removing unnecessary columns, and scaling the data.
+
+```{r}
+#replace missing values as 0's
+df.noNans<-df.users%>%replace(is.na(.),0)
+
+#drop columns 
+df.sub<-select(df.noNans,-c(user,timefirst,timelast,N))
+
+#scale data
+df.scaled<-df.sub%>%mutate_all(scale)
+
+head(df.scaled)
+```
+
+Next, we perform principal component analysis, and create an eblow chart to show the explained variance. We can see a clear elbow at 3 components.
+
+```{r}
+#perform pca on data
+my.pca<-prcomp(df.scaled,retx=TRUE,center=FALSE,scale=FALSE) # Run PCA and save to my.pca
+
+#make scree plot
+plot(my.pca, type="line")
+
+#summary of PCA
+summary(my.pca)
+```
+We select 3 principal components. Then, we create a heatmap showing the makeups of these components. PC3 seems to be the component that separates liquidations.
+
+```{r}
+#select 4 components
+ncomps=3
+
+#make heatmap for PCs
+V <- t(my.pca$rotation[,1:ncomps]) # We transpose to make the principal components be rows
+heatmap.2(V, main='Principal Components', cexRow=0.75, cexCol=0.75, scale="none", dendrogram="none",
+Colv= FALSE, Rowv=FALSE, tracecol=NA,density.info='none')
+
+```
+Finally, we perform kmeans clustering on the data. We select 3 clusters for the 3 principal components. The cluster sizes are roughly even.
+
+```{r}
+#run k-means algorithm
+pca.matrix<-my.pca$x[,1:ncomps]
+set.seed(1)
+km <-kmeans(df.scaled,ncomps)
+
+#assign cluster column to Data Frame
+df.scaled$cluster<-km$cluster
+
+#plot frequencies of each cluster
+barplot(table(km$cluster),main="Kmeans Cluster Size",col=c('red','green','blue'))
+```
+### Results
+
+We analyze the clusters by making a heatmap of their means. Cluster 2 is the cluster that has liquidators. When trying to find patterns of behavior that is similar to liquidators, we can look to the means in cluster 2. The most important factors are a low proportion of collateral changes and deposits, and a large number of borrows and repays. 
+
+```{r}
+#make heatmap of cluster centers
+heatmap.2(km$centers,
+scale = "none",
+dendrogram = "row",
+Colv=FALSE,
+cexCol=1.0,
+main = "Kmeans Cluster Centers",
+trace ="none")
+```
+Next, we observe that liquidators are almost exclusive to this cluster. Almost all liquidations occur within cluster 2.
+
+```{r}
+#make barplot of liquidators for each cluster
+df.liquidators<-filter(df.scaled, df.scaled$logn_liquidation>0)
+barplot(table(df.liquidators$cluster),main='How Many Liquidators in Each Cluster?',col=c('red','green','blue'))
+```
+To conclude, we create a biplot of the different clusters. We can see that cluster 2 users have a much larger spread than the other clusters.
+
+```{r,fig.width=16,fig.height=8}
+#make biplot for clusters
+plot1<-ggbiplot(my.pca,choices=c(1,2),
+  labels=rownames(df.scaled), #show point labels
+  var.axes=TRUE, # Display axes
+  ellipse = FALSE, # Don't display ellipse
+  obs.scale=1,
+  groups=as.factor(km$cluster)) +
+  ggtitle("User Data Projected on PC1 and PC2 ")
+
+plot1
+```
+### Discussion
+
+The clustering we conducted yields three main clusters. Cluster 2 is our high risk group as it includes almost all of the liquidatees. To see what patterns of behavior are common to liquidatees, we can read across cluster 2's rows in the heatmap. We can see that the most distinguishing behaviors are a high number of borrows and redeems, and low proportions of deposits and collateral changes. Clusters 3 and 1 are our low risk groups. These clusters have much fewer transactions than cluster 2, and have higher proportions of deposits and lower proportions of borrows. The main factor that separates these two clusters is that cluster 3 has a large number and proporiton of redeems compared to cluster 1. This indicates that cluster 3 are users who have taken their money out of the protocol during their lifetime, whereas cluster 1 are users who let their money sit. 
+
+
+# Summary and Recommendations
+
+Throughout this research, we were able to discover the pattern of behaviors common to users who receive liquidations. We have found that a high number of borrows and repays, along with a low proportion of deposits and collateral changes places a user in a high risk group for liquidations. It is important to note that these behaviors are correlative rather than predictive. The next step would be to use these findings to predict whether or not a user would liquidate within a certain time frame. In addition to the work shown above, I have been working on an algorithm to convert the user transaction data, in to a data set that would provide the account balances for all users each day. Using this data we can calculate feature that would be relevant to predicting if a user will receive a liquidation, such as health factor. In the future, I plan on training a machine learning model to do just this. In addition in being able to make predictions, the model would also be able to show which features have high predictive capability in predicting liquidations. If the model were to be successful, these findings could be further applied to build a smart contract to perform liquidations on Aave. The liquidator who can fastest liquidate an unhealthy user is the one to receive the liquidation bonus, so being able to predict potential users to liquidate before they occur would be of high value. 
+
+
+

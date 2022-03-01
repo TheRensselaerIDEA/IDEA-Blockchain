@@ -1,0 +1,218 @@
+---
+title: "User Clustering"
+author: "Aaron Micah Green"
+date: "2/15/2022"
+output: html_document
+---
+## Load necessary packages:
+```{r}
+library(ggplot2)
+library(gplots)
+library(lubridate)
+library(ggbiplot)
+library(plotly)
+library(cluster)
+library(dplyr)
+
+wssplot <- function(data, nc=25, seed=20){
+  wss <- data.frame(cluster=1:nc, quality=c(0))
+  for (i in 1:nc){
+    set.seed(seed)
+    wss[i,2] <- sum(kmeans(data, centers=i, iter.max = 100)$withinss)
+  }
+  ggplot(data=wss) +
+  geom_line(aes(x=cluster,y=quality)) +
+  ggtitle("Quality of k-means by Cluster")
+}
+```
+
+```{r}
+source("../Utility Notebooks/loadData.r")
+```
+```{r}
+timeFinal <- max(df$timestamp)
+userActiveTime <- df %>%
+  group_by(user) %>%
+  summarise(firstTransactionTimestamp = min(timestamp), finalTimestamp = max(timestamp), daysSinceFirstTransaction = max((timeFinal-min(timestamp))/86400, 1))
+
+userDailyTransactions <- df %>%
+  group_by(user) %>%
+  mutate(transactionDay = floor_date(as_datetime(timestamp), unit = "day")) %>%
+  group_by(user, transactionDay) %>%
+  summarise(transactionsPerActiveDay = n())
+
+userActiveDays <- userDailyTransactions %>%
+  group_by(user) %>%
+  summarise(activeDays = n())
+
+userBorrowCounts <- borrows %>%
+  group_by(user) %>%
+  summarise(borrowCount = n(), borrowValue = sum(amountUSD))
+
+userDepositCounts <- deposits %>%
+  group_by(user) %>%
+  summarise(depositCount = n(), depositValue = sum(amountUSD))
+
+userRedeemCounts <- redeems %>%
+  group_by(user) %>%
+  summarise(redeemCount = n(), redeemValue = sum(amountUSD))
+
+userRepayCounts <- repays %>%
+  group_by(user) %>%
+  summarise(repayCount = n(), repayValue = sum(amountUSD))
+
+userLiquidatedCounts <- aggregateLiquidations %>%
+  group_by(user) %>%
+  summarise(liquidatedCount = n(), liquidatedValue = sum(totalPrincipalUSD))
+
+userLiquidationCounts <- liquidationsPerformed %>%
+  group_by(user) %>%
+  summarise(liquidationsPerformed = n(), liquidationsPerformedValue = sum(amountUSDCollateral))
+
+userSwapCounts <- swaps %>%
+  group_by(user) %>%
+  summarise(swapCount = n())
+
+userCollateralCounts <- collaterals %>%
+  group_by(user) %>%
+  summarise(collateralCount = n())
+
+userReservesUsed <- df %>%
+  filter(type == "deposit" | type == "borrow") %>%
+  group_by(user) %>%
+  summarise(reservesUsed = n_distinct(reserve))
+
+
+
+userTransactionCounts <- df %>%
+  select(user, protocolContract) %>%
+  distinct() %>%
+  full_join(userBorrowCounts, by = "user") %>%
+  full_join(userDepositCounts, by = "user") %>%
+  full_join(userRedeemCounts, by = "user") %>%
+  full_join(userRepayCounts, by = "user") %>%
+  full_join(userLiquidatedCounts, by = "user") %>%
+  full_join(userLiquidationCounts, by = "user") %>%
+  full_join(userSwapCounts, by = "user") %>%
+  full_join(userCollateralCounts, by = "user")
+
+userTransactionCounts[is.na(userTransactionCounts)] = 0
+
+userTransactionCounts <- userTransactionCounts %>%
+  mutate(totalTransactionCount = borrowCount + depositCount + redeemCount + repayCount + liquidatedCount + liquidationsPerformed + swapCount + collateralCount)
+
+userActiveCollaterals <- collaterals %>%
+  group_by(user, reserve) %>%
+  slice_max(timestamp) %>%
+  filter(toState == TRUE) %>%
+  ungroup() %>%
+  group_by(user) %>%
+  summarise(numActiveCollaterals=n())
+
+userClusteringData <- userTransactionCounts %>%
+  mutate(percentDepositRedeem = (depositCount + redeemCount) / totalTransactionCount) %>%
+  mutate(averageUSDPerTransaction = (depositValue + redeemValue + repayValue + liquidatedValue + liquidationsPerformedValue + borrowValue) / totalTransactionCount) %>%
+  mutate(timesLiquidated = liquidatedCount) %>%
+  mutate(liquidationsPerformed = liquidationsPerformed) %>%
+  left_join(userActiveTime, by="user") %>%
+  mutate(averageTransactionsPerDay = totalTransactionCount / daysSinceFirstTransaction) %>%
+  left_join(userActiveDays, by="user") %>%
+  mutate(percentageDaysActive = activeDays / daysSinceFirstTransaction) %>%
+  left_join(userReservesUsed, by = "user") %>%
+  left_join(userActiveCollaterals, by="user") %>%
+  mutate(percentDeposit = depositCount / totalTransactionCount, percentRedeems = redeemCount / totalTransactionCount, 
+         percentBorrow = borrowCount / totalTransactionCount, percentRepay = repayCount / totalTransactionCount,
+         percentSwap = swapCount / totalTransactionCount, percentCollateral = collateralCount / totalTransactionCount,
+         percentLiquidations = liquidationsPerformed / totalTransactionCount)
+  
+userClusteringData[is.na(userClusteringData)] = 0
+```
+
+```{r}
+library("ggpubr")
+library(corrplot)
+# Check for correlation between features so we can select features that aren't correlated:
+cor.test(userClusteringData$percentBorrow, userClusteringData$timesLiquidated, method = "pearson")
+
+userClusteringDataToCorrelate <- userClusteringData %>%
+  select(-user, -protocolContract)
+
+res <- cor(userClusteringDataToCorrelate)
+corrplot(res, type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 45, insig = "blank")
+
+userClusteringDataToRun <- userClusteringData %>%
+  select(user, protocolContract, percentDepositRedeem, averageTransactionsPerDay, averageUSDPerTransaction, timesLiquidated, liquidationsPerformed, activeDays, percentageDaysActive, numActiveCollaterals, reservesUsed)
+
+```
+
+# Do the clustering
+
+```{r}
+# First, let's select the features we want to use:
+clusteringFeatures <- userClusteringDataToRun %>%
+  filter(protocolContract == FALSE) %>%
+  select(-user, -protocolContract)
+
+scaledData <- clusteringFeatures %>% mutate_all(scale)
+wssplot(scaledData, 25, 20)
+
+km <- kmeans(scaledData, 2)
+
+
+library(factoextra)
+library(cluster)
+library(fclust)
+library(ppclust)
+library(e1071)
+fuzzyCMeans <- cmeans(data.matrix(userClusteringDataToRun), 4, iter.max = 1000, m = 4)
+
+
+fviz_cluster(list(data = data.matrix(userClusteringDataToRun), cluster=fuzzyCMeans$cluster), 
+             ellipse.type = "norm",
+             ellipse.level = 0.68,
+             palette = "jco",
+             ggtheme = theme_minimal(), geom = "point") + xlim(-1, 1) + ylim(-1, 1)
+
+
+```
+
+
+```{r}
+my.pca <- prcomp(scaledData[1:20000,], retx=TRUE, center=TRUE, scale=TRUE)
+km$cluster <- as.factor(km$cluster)
+kclass <- km$cluster
+# Calculate the scale limits
+t <- 10
+# Create the biplot using ggbiplot
+p <- ggbiplot(my.pca,
+  choices = c(1, 2),
+  alpha = 0.25,
+  varname.adjust = 1.5,obs.scale=1,
+  groups = kclass)
+# Add a title and set the scale limit
+p + xlim(-10,2) + ylim(-10, 10)
+
+
+
+```
+```{r, echo=FALSE}
+df.clusters <- data.frame(user = userTransactionCounts$user, cluster = km$cluster)
+df <- left_join(df, df.clusters, by = "user")
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+# 6-list of ggplot colors explicitly specified
+pgg <- gg_color_hue(6)
+cluster_names <- c('1' = "Cluster 1", '2' = "Cluster 2", '3' = "Cluster 3", '4' = "Cluster 4", '5' = "Cluster 5")
+ggplot(data = df[!(is.na(df$cluster)) & (df$type != "collateral"), ], aes(x = date,  group = type, color = type)) + 
+  geom_density()+
+  ggtitle("Transaction Types Over Time by User Cluster")+
+  labs(color = "Lengend")+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.5, color = "black")+
+  scale_x_date(date_breaks = "3 months", date_labels = "%b-%y")+
+  scale_color_manual("type", values = c("deposit"="green","borrow" = pgg[4], "redeem" = "yellow", "liquidation" = "red","repay"=pgg[6],"swap"=pgg[5]))+
+  scale_fill_manual("type", values = c("deposit"="green","borrow" = pgg[4], "redeem" = "yellow", "liquidation" = "red","repay"=pgg[6],"swap"=pgg[5]))+
+  facet_wrap(~ cluster, labeller = as_labeller(cluster_names))
+```

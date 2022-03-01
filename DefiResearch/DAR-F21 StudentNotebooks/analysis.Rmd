@@ -1,0 +1,341 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+#import libraries
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dplyr)
+}
+if (!require("devtools")) {
+  install.packages("devtools")
+  library(devtools)
+}
+if (!require("ggfortify")) {
+  install.packages("ggfortify")
+  library(ggfortify)
+}
+if (!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+if (!require("survival")) {
+  install.packages("survival")
+  library(survival)
+}
+if (!require("zoo")) {
+  install.packages("zoo")
+  library(zoo)
+}
+if (!require("plotly")) {
+  install.packages("plotly")
+  library(plotly)
+}
+```
+
+```{r}
+borrows <- read_csv('../Data/borrows.csv')
+deposits <- read_csv('../Data/deposits.csv')
+raw_df <- read_rds('../Data/transactions.Rds')
+```
+
+```{r}
+borrows <- raw_df %>%
+  filter(type=="borrow")
+
+deposits <- raw_df %>%
+  filter(type=="deposit")
+
+depositBorrow <- left_join(deposits,borrows,by="onBehalfOf") %>%
+  dplyr::rename(depositTime=timestamp.x) %>%
+  dplyr::rename(borrowTime=timestamp.y) %>%
+  group_by(onBehalfOf) %>%
+  dplyr::summarise(timeDiff=case_when(min(borrowTime)-min(depositTime)>0 ~ (min(borrowTime)-min(depositTime))/86400, TRUE ~ as.double(max(borrows$timestamp)/86400))) %>%
+  mutate(status=case_when(timeDiff==max(borrows$timestamp)/86400 ~ 0, timeDiff>0 ~ 1, TRUE ~ 0)) %>%
+  select(onBehalfOf,timeDiff,status)
+
+depositBorrow
+unique(depositBorrow$status)
+```
+
+```{r}
+km <- with(depositBorrow, Surv(timeDiff, status))
+head(km,80)
+```
+
+```{r}
+km_fit <- survfit(Surv(timeDiff, status) ~ 1, data=depositBorrow)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
+autoplot(km_fit,xlab="time (days)",ylab="Survival Rate",title="Survival Rate of Deposit before the first Borrow")
+```
+
+```{r}
+usdc_borrows <- borrows %>%
+  filter(reserve=="USDC") %>%
+  select(onBehalfOf,timestamp) %>%
+  dplyr::rename(user=onBehalfOf)
+
+usdc_liquidations <- raw_df %>%
+  filter(type=="liquidation" & principalReserve=="USDC") %>%
+  select(user,timestamp)
+
+usdc_borrowLiquid <- left_join(usdc_borrows,usdc_liquidations,by="user") %>%
+  dplyr::rename(borrowTime=timestamp.x) %>%
+  dplyr::rename(liquidTime=timestamp.y) %>%
+  group_by(user) %>%
+  dplyr::summarise(timeDiff=case_when(min(borrowTime)-min(liquidTime)>0 ~ min(borrowTime)-min(liquidTime), TRUE ~ as.integer(max(usdc_borrows$timestamp)))) %>%
+  mutate(status=case_when(timeDiff>0 ~ 1, TRUE ~ 0)) %>%
+  select(user,timeDiff,status)
+
+usdc_borrowLiquid
+unique(usdc_borrowLiquid$status)
+```
+
+```{r}
+liquidations <- raw_df %>%
+  filter(type=="liquidation")
+```
+
+
+```{r}
+borrows2 <- raw_df %>%
+  filter(type=="borrow") %>%
+  select(onBehalfOf,borrowRateMode,borrowRate,reserve,amountUSD,timestamp) %>%
+  dplyr::rename(user=onBehalfOf)
+
+liquids <- raw_df %>%
+  filter(type=="liquidation") %>%
+  select(user)
+
+liquidModes <- left_join(borrows2,liquids,by="user")
+
+ggplot(liquidModes,aes(x=borrowRateMode)) + geom_bar()
+```
+
+```{r}
+liquidStable <- liquidModes %>%
+  filter(borrowRateMode=="Stable") %>%
+  select(borrowRate,reserve,amountUSD,timestamp)
+
+liquidVariable <- liquidModes %>%
+  filter(borrowRateMode=="Variable") %>%
+  select(borrowRate,reserve,amountUSD,timestamp)
+
+ggplot(liquidStable,aes(x=reserve,y=borrowRate)) + geom_boxplot(outlier.shape=NA) + ggtitle("Borrow Rate for Every Stable Borrow that Liquidated by Reserve")
+ggplot(liquidVariable,aes(x=reserve,y=borrowRate)) + geom_boxplot(outlier.shape=NA) + ggtitle("Borrow Rate for Every Variable Borrow that Liquidated by Reserve")
+
+ggplot(liquidStable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Amount USD vs Borrow Rate for every Stable Borrow that Liquidated")
+ggplot(liquidVariable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Amount USD vs Borrow Rate for every Variable Borrow that Liquidated")
+```
+
+```{r}
+big_liquidVariable <- liquidVariable %>%
+  filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI")
+
+big_liquidStable <- liquidStable %>%
+  filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI")
+
+ggplot(big_liquidVariable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Amount USD vs Borrow Rate for every Variable Borrow that Liquidated (Big 3)")
+ggplot(big_liquidStable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Amount USD vs Borrow Rate for every Stable Borrow that Liquidated (Big 3)")
+```
+
+```{r}
+# calculate and graph a moving average of borrow rates that led to liquidation for both stable and variable borrows
+roll_big_liquidStable <- big_liquidStable %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg=zoo::rollmean(borrowRate,k=1,fill=NA)) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA)) %>%
+  dplyr::mutate(rollingAvg90=zoo::rollmean(borrowRate,k=90,fill=NA))
+
+ggplot(roll_big_liquidStable, aes(x=as_datetime(timestamp),y=rollingAvg21)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("21-Day Rolling Average for Stable Borrow Rates that Liquidated over Time") + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
+
+roll_big_liquidVariable <- big_liquidVariable %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg=zoo::rollmean(borrowRate,k=1,fill=NA)) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA)) %>%
+  dplyr::mutate(rollingAvg90=zoo::rollmean(borrowRate,k=90,fill=NA))
+
+ggplot(roll_big_liquidVariable, aes(x=as_datetime(timestamp),y=rollingAvg21)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("21-Day Rolling Average for Variable Borrow Rates that Liquidated over Time") + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
+```
+
+```{r}
+nonLiquid <- subset(borrows2, !(user %in% liquidations$user))
+
+nonLiquid
+ggplot(nonLiquid,aes(x=borrowRateMode)) + geom_bar()
+```
+
+```{r}
+nonLiquidStable <- nonLiquid %>%
+  filter(borrowRateMode=="Stable")
+
+nonLiquidVariable <- nonLiquid %>%
+  filter(borrowRateMode=="Variable")
+
+ggplot(nonLiquidStable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Stable Borrows that did NOT Liquidate")
+ggplot(nonLiquidVariable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Variable Borrows that did NOT Liquidate")
+```
+
+```{r}
+big_nonLiquidStable <- nonLiquidStable %>%
+  filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI")
+
+big_nonLiquidVariable <- nonLiquidVariable %>%
+  filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI")
+```
+
+```{r}
+roll_big_nonLiquidStable <- big_nonLiquidStable %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg=zoo::rollmean(borrowRate,k=1,fill=NA)) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA)) %>%
+  dplyr::mutate(rollingAvg90=zoo::rollmean(borrowRate,k=90,fill=NA))
+
+ggplot(roll_big_nonLiquidStable, aes(x=as_datetime(timestamp),y=rollingAvg21)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("21-Day Rolling Average for Stable Borrow Rates that Did Not Liquidate over Time") + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
+
+roll_big_nonLiquidVariable <- big_nonLiquidVariable %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg=zoo::rollmean(borrowRate,k=1,fill=NA)) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA)) %>%
+  dplyr::mutate(rollingAvg90=zoo::rollmean(borrowRate,k=90,fill=NA))
+
+ggplot(roll_big_nonLiquidVariable, aes(x=as_datetime(timestamp),y=rollingAvg21)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("21-Day Rolling Average for Variable Borrow Rates that Did Not Liquidate over Time") + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
+```
+
+```{r}
+roll_borrows_stable <- borrows %>%
+  filter(borrowRateMode=="Stable") %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA))
+
+roll_borrows_variable <- borrows %>%
+  filter(borrowRateMode=="Variable" & borrowRate <= 100) %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA))
+
+ggplot(roll_borrows_stable, aes(x=as_datetime(timestamp),y=rollingAvg21)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("21-Day Rolling Average for Stable Borrow Rates over Time") + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
+
+ggplot(roll_borrows_variable, aes(x=as_datetime(timestamp),y=rollingAvg21)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("21-Day Rolling Average for Variable Borrow Rates over Time") + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
+```
+
+Regardless of whether or not you liquidate, the 21-day average looks roughly the same. Maybe Borrow Rate doesn't affect Liquidation?
+
+rate of liquidation vs coin instability
+
+```{r}
+updated_df <- read_rds("../Data/transactionsv2.rds")
+updated_df
+```
+
+Rate of Liquidation over time calculation: rolling average of liquidations
+Coin Instability calculation: reserve price over time
+
+```{r}
+uborrows <- updated_df %>%
+  filter(type=="borrow")
+
+uliquidations <- updated_df %>%
+  filter(type=="liquidation")
+
+uprices <- updated_df %>%
+  select(reserve,timestamp,reservePriceUSD)
+```
+
+```{r}
+uprices_big3 <- uprices %>%
+  filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI")
+
+ggplot(uprices_big3,aes(x=as_datetime(timestamp),y=reservePriceUSD,color=reserve)) + geom_point()
+```
+
+```{r}
+uprices_usdc <- uprices_big3 %>%
+  filter(reserve=="USDC")
+
+uprices_dai <- uprices_big3 %>%
+  filter(reserve=="DAI")
+
+roll_uprices_usdc <- uprices_usdc %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg=zoo::rollmean(reservePriceUSD,k=7,fill=NA))
+
+ggplot(roll_uprices_usdc,aes(x=as_datetime(timestamp),y=rollingAvg)) + geom_point()
+
+roll_uprices_dai <- uprices_dai %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg7=zoo::rollmean(reservePriceUSD,k=7,fill=NA))
+```
+
+```{r}
+roll_uprices <- uprices %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg=zoo::rollmean(reservePriceUSD,k=7,fill=NA))
+
+ggplot(roll_uprices,aes(x=as_datetime(timestamp),y=rollingAvg)) + geom_line() + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
+```
+
+```{r}
+roll_uprices %>%
+  dplyr::mutate(day=format(as.Date(roll_uprices$timestamp), format="%d")) %>%
+  dplyr::mutate(month=format(as.Date(roll_uprices$timestamp), format="%m"))
+
+head(roll_uprices)
+```
+
+```{r}
+stable.borrows <- borrows %>%
+  dplyr::filter(borrowRateMode=="Stable") %>%
+  dplyr::filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI") %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA))
+
+variable.borrows <- borrows %>%
+  dplyr::filter(borrowRateMode=="Variable") %>%
+  dplyr::filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI") %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA))
+
+ggplot(stable.borrows, aes(x=as.Date(date),y=rollingAvg21)) + 
+  geom_line() +
+  scale_x_date(date_labels="%m-%y") + 
+  xlab("Date") +
+  ylab("Borrow Rate") +
+  ggtitle("21-Day Rolling Average Stable Borrow Rate of USDC, USDT, and DAI")
+
+ggplot(variable.borrows, aes(x=as.Date(date),y=rollingAvg21)) + 
+  geom_line() +
+  scale_x_date(date_labels="%m-%y") + 
+  xlab("Date") +
+  ylab("Borrow Rate") +
+  ggtitle("21-Day Rolling Average Variable  Borrow Rate of USDC, USDT, and DAI")
+```
+
+

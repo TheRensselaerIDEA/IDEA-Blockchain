@@ -1,0 +1,180 @@
+---
+title: "BlockchainL Project Status Notebook Template"
+author: "Chris Cammilleri"
+date: "11 November 2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "Decentralized Finance"
+---
+
+## Weekly Work Summary	
+
+* RCS ID: cammic
+* Project Name: Blockchain
+
+* Updated dataset
+* Performed clustering to help distinguish liquidator behavior
+
+## Personal Contribution	
+
+All contributions were completed by me. 
+
+## Discussion of Primary Findings
+
+The first thing I did this week was update the dataset. Some of the changes included creating an alias for User Id's, adding collateral change transactions, adding a column representing if the transaction was done by an Aave protocol smart contract, and fixing the prices for WETH. The updated dataset is called transactionsv2.Rds and has been uploaded under the Data file. 
+
+My second task was to perform clustering on the users, but this time based on the features that distinguish liquidators and non-liquidators. The goal of this is to find user behaviors that are similar to those who liquidate. The code for this process is below
+
+```{r}
+#import libraries
+library(ggplot2)
+library(ggbiplot)
+library(gplots)
+library(RColorBrewer)
+library(beeswarm)
+library(tidyverse)
+library(ggbeeswarm)
+library(foreach)
+library(doParallel)
+```
+
+### Load Data
+
+We start by loading version 2 of the transaction data in to a dataframe, and remove transactions done by the Aave protocol.
+
+```{r}
+#load in csv file to data frame
+df<-read_csv(file='~/Blockchain/transactions2.csv')
+
+#remove protocol smart contracts
+df<-filter(df,df$protocolContract==FALSE)
+
+head(df)
+```
+
+### Group Data by User
+
+Next, we group users by the factors that distiniguish liquidators and non-liquidators. These are the time a user is active, their proportion of transaction types, and number of each type of transaction.
+
+```{r}
+#group by user and get time of user's first and last transaction, as well as number of transactions
+df.users<- df%>%group_by(user)%>%
+  summarise(timefirst=min(timestamp), timelast=max(timestamp), N=n())
+
+#get the time the user has been active
+df.users$timeactive<-df.users$timelast-df.users$timefirst
+
+#get user's transaction information
+for(Type in c(unique(df$type))){
+  #filter for only transactions of certain type
+  df.type <-filter(df%>%group_by(user)%>%
+                     count(type),type==Type)
+  
+  #add counts of transaction types to df
+  ntypes<-paste("logn_",Type,sep='')
+  colnames(df.type)[3]<-ntypes
+  df.type<-df.type%>%replace(is.na(.),0)
+  df.type[ntypes]<-log(df.type[ntypes]+1)
+  
+  df.users<-merge(x=df.users,y=select(df.type,user,ntypes),by="user",all.x=TRUE)
+  
+  
+  #get proportion of transaction types and weekly number of transaction type
+  df.users[paste("p_",Type,sep='')]<-(df.users[ntypes])/((df.users$N))
+}
+
+head(df.users)
+```
+We clean the user data by replacing NaNs with 0s, removing unnecessary columns, and scaling the data.
+
+```{r}
+#replace missing values as 0's
+df.noNans<-df.users%>%replace(is.na(.),0)
+
+#drop columns 
+df.sub<-select(df.noNans,-c(user,timefirst,timelast,N))
+
+#scale data
+df.scaled<-df.sub%>%mutate_all(scale)
+
+head(df.scaled)
+```
+
+### Principal Component Analysis
+
+Next, we perform principal component analysis, and create an eblow chart to show the explained variance. We can see a clear elbow at 3 components.
+
+```{r}
+#perform pca on data
+my.pca<-prcomp(df.scaled,retx=TRUE,center=FALSE,scale=FALSE) # Run PCA and save to my.pca
+
+#make scree plot
+plot(my.pca, type="line")
+
+#summary of PCA
+summary(my.pca)
+```
+We select 3 principal components. Then, we create a heatmap showing the makeups of these components. PC3 seems to be the component that separates liquidations.
+
+```{r}
+#select 4 components
+ncomps=3
+
+#make heatmap for PCs
+V <- t(my.pca$rotation[,1:ncomps]) # We transpose to make the principal components be rows
+heatmap.2(V, main='Principal Components', cexRow=0.75, cexCol=0.75, scale="none", dendrogram="none",
+Colv= FALSE, Rowv=FALSE, tracecol=NA,density.info='none')
+
+```
+## Clustering 
+
+Finally, we perform kmeans clustering on the data. We select 3 clusters for the 3 principal components. The cluster sizes are roughly even.
+
+```{r}
+#run k-means algorithm
+pca.matrix<-my.pca$x[,1:ncomps]
+set.seed(1)
+km <-kmeans(df.scaled,ncomps)
+
+#assign cluster column to Data Frame
+df.scaled$cluster<-km$cluster
+
+#plot frequencies of each cluster
+barplot(table(km$cluster),main="Kmeans Cluster Size",col=c('red','green','blue'))
+```
+We analyze the clusters by making a heatmap of their means. Cluster 2 is the cluster that has liquidators. When trying to find patterns of behavior that is similar to liquidators, we can look to the means in cluster 2. The most important factors are a low proportion of collateral changes and deposits, and a large number of borrows and repays. 
+
+```{r}
+#make heatmap of cluster centers
+heatmap.2(km$centers,
+scale = "none",
+dendrogram = "row",
+Colv=FALSE,
+cexCol=1.0,
+main = "Kmeans Cluster Centers",
+trace ="none")
+```
+Next, we observe that liquidators are almost exclusive to this cluster. Almost all liquidations occur within cluster 2.
+
+```{r}
+#make barplot of liquidators for each cluster
+df.liquidators<-filter(df.scaled, df.scaled$logn_liquidation>0)
+barplot(table(df.liquidators$cluster),main='How Many Liquidators in Each Cluster?',col=c('red','green','blue'))
+```
+To conclude, we create a biplot of the different clusters. We can see that cluster 2 users have a much larger spread than the other clusters.
+
+```{r,fig.width=16,fig.height=8}
+#make biplot for clusters
+plot1<-ggbiplot(my.pca,choices=c(1,2),
+  labels=rownames(df.scaled), #show point labels
+  var.axes=TRUE, # Display axes
+  ellipse = FALSE, # Don't display ellipse
+  obs.scale=1,
+  groups=as.factor(km$cluster)) +
+  ggtitle("User Data Projected on PC1 and PC2 ")
+
+plot1
+```

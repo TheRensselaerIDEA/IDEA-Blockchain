@@ -1,0 +1,596 @@
+---
+title: "MATP-4910  Final Project Notebook"
+author: "Cole Paquin"
+date: "15 November 2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DAR Project- DeFi"
+---
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+if (!require("ggplot2")) {
+   install.packages("ggplot2")
+   library(ggplot2)
+}
+if (!require("knitr")) {
+   install.packages("knitr")
+   library(knitr)
+}
+if (!require("reshape2")) {
+   install.packages("reshape2")
+   library(reshape2)
+}
+if (!require("stringi")) {
+   install.packages("stringi")
+   library(stringi)
+}
+if (!require("matrixStats")) {
+   install.packages("matrixStats")
+   library(matrixStats)
+}
+library(ggbiplot)
+library(gplots)
+library(RColorBrewer)
+library(beeswarm)
+library(tidyverse)
+library(tidyquant) 
+library(ggbeeswarm)
+library(foreach)
+library(doParallel)
+library(Rtsne)
+library(anytime)
+```
+
+# Introduction
+
+* github repository: dar-paquic
+* Your github ID: paquic
+* Final notebook: *PAQUIC_final_notebook.Rmd*
+    
+Github Additions: paquic-Assignment7-f21.Rmd, PAQUIC_final_notebook.Rmd, PAQUIC_final_notebook.pdf
+
+Github Issues: 93, 95, part of 96
+    
+All code is mine.
+
+# Overview & Problems Tackled
+
+I focused on three overall topics. These topics are user clustering, transaction trends analysis, and coin utilization and uses. For user clustering, I wanted to see if we could identify how users interact in AAVE and if we can see trends of users that may be more likely to liquidate. Then, I wanted to see how AAVE has evolved over time and how users are now handling their coins. Finally, I looked into how each individual coin has been used and if different types of coins are used differently.
+
+# Data Description
+
+Our data is made up of 745,612 different transactions in the AAVE v2 lending protocol. These transactions are a total of 7 types (deposit, redeem, borrow, repay, swap, liquidation, collateral). There are a total of 53 different coins in the data. These are divided into stablecoins, non-stable coins, and Amm coins. For each transaction, we have a total of 33 columns which record everything about the transaction from the date to the user and the amount of money involved.
+
+# Results
+
+Problem 1- We are able to cluster users into groups that allow us the see the behavior of users who are often liquidated. Most users are not overly active and prefer to let their coins sit and make whatever interest they can
+
+
+Problem 2-Although the number of active users in AAVE has not increased, people are using larger amounts of money in their transactions. AAVE;s market is heavily subject to shock events that will briefly disrupt transaction patterns.
+
+Problem 3- Stable coins are borrowed at much higher rates than other coins, and their is a wide variety of uses for these other non-stable coins. Stable coins all seem to high fairly similar patterns in their utilizations rates.
+
+
+## Problem 1 
+
+The first problem I looked into was user clustering. This provides us with an understanding of what different people are trying to do to make money. Can we see patterns in different users? Not only do we want to know the clusters, but we also want to be able to see what distinguishes the different clusters.
+
+ 
+### Methods
+
+I created a new dataframe where each row represented an individual user. Each user has certain statistics for each type of transaction, as well as the amount of time they have been active. The first few rows are shown below.
+
+```{r, echo=FALSE, warning=FALSE}
+df<-read_rds("~/transactionsv2.rds")
+#group by user and get time of user's first and last transaction, as well as number of transactions
+df.users<- df%>%dplyr::group_by(user, user_alias)%>%
+  summarise(timefirst=min(anydate(timestamp)), timelast=max(anydate(timestamp)), N=n())
+#get the time the user has been active
+df.users$timeactive<-df.users$timelast-df.users$timefirst
+#get amounts for columns
+df$logUSD<-log10(df$amountUSD)
+df$logCollateralUSD<-log10(df$amountUSDCollateral)
+#get user's transaction information
+for(Type in unique(df$type)){
+  #filter for only transactions of certain type
+  df.type <-filter(df%>%group_by(user)%>%
+                     dplyr::count(type),type==Type)
+  
+  #add means of each transaction type
+  if(Type!="liquidation" || Type!="swap"){
+    df.sum<-filter(df,type==Type)%>%
+      group_by(user)%>%
+      summarise(Sum=sum(logUSD))
+    colnames(df.sum)[2]<-paste('total_',Type,sep='')
+    df.users<-merge(x=df.users,y=df.sum,by="user",all.x=TRUE)
+  } 
+  
+  #add counts of transaction types to df
+  ntypes<-paste("n",Type,sep='')
+  colnames(df.type)[3]<-ntypes
+  df.users<-merge(x=df.users,y=select(df.type,user,ntypes),by="user",all.x=TRUE)
+  
+  #get proportion of transaction types and weekly number of transaction type
+  df.users[paste("prop_",Type,sep='')]<-(df.users[ntypes]+.05)/((df.users$N)+.3)
+}
+kable(head(df.users[,1:8]))
+```
+
+From here, I used pca and kmeans clustering to build the actual clusters.
+
+### Results
+
+With a bit of work we can select the columns we would like to cluster on, as well as manually scaling the database. To preserve the original users dataframe, we save the scaled data separately. Also, I also removed outlier users who we either know or suspect of being SMART Contracts. They throw off clustering in a way we do not want. From their, we can run PCA.
+
+```{r, echo=FALSE}
+#subset only columns we wish to scale by removing columns that we will not cluster on
+df.sub<-select(df.users,-c(user,timefirst,timelast,nborrow,nrepay,nswap,nliquidation,nredeem,ndeposit, total_swap, nswap, total_collateral, total_liquidation, ncollateral, user_alias))
+#repalce missing values as 0's
+df.sub<-df.sub%>%replace(is.na(.),0)
+df.scaled<-df.sub%>%mutate_all(scale)
+df.scaled <- df.scaled[-c(41100, 44263, 44658, 14211, 20033, 6638),]
+df.users <- df.users[-c(41100, 44263, 44658, 14211, 20033, 6638),]
+
+#perform pca on data
+my.pca<-prcomp(df.scaled,retx=TRUE,center=FALSE,scale=FALSE) # Run PCA and save to my.pca
+#make scree plot
+plot(my.pca, type="line")
+#summary of pca
+ncomps=5
+```
+
+Plotting the PCA allows us to chose the number of cluster we wish to have. In this case, three appears optimal, however I chose to work with 5. If I chose 3, we lose some of the distinctions between clusters and they appear to mean less. Thus let's look at what the clusters are and how users are distributed.
+
+```{r, echo = FALSE}
+#run kmeans algorithm
+set.seed(1)
+km <-kmeans(df.scaled,5)
+#plot frequencies of each cluster
+barplot(table(km$cluster),main="Kmeans Cluster Size")
+```
+
+First, we can see that it appears most users get put into cluster 3. This should represent our more average user, as opposed to cluster 2. Until we see the cluster centers we cannot draw any real conclusions.
+
+```{r, echo=FALSE}
+#make heatmap of cluster centers
+heatmap.2(km$centers,
+scale = "col",
+dendrogram = "row",
+Colv=FALSE,
+cexCol=1.0,
+main = "Kmeans Cluster Centers",
+trace ="none")
+```
+
+From this we can start to see how users are actually using AAVE. Cluster 3, our largest cluster, is not very active. They mostly deposit and redeem their money, seemingly focused on just earning a return on their cryptocurrencies. Cluster 2, our outlier cluster, contains the users who liquidate the most. What is interesting, is that they also seem to be the ones who swap between variable and stable interest rates. Both of these transaction types are significantly more prevalent in cluster 3 than in any other cluster. Cluster 1 appears to be our "Best" users. They are more active and have been around for a long time. However, they do not liquidate very often, meaning they are good a maintaining a good health factor. Cluster 4 is our main borrowing groups, who take out loans but do a good job of repaying them. Finally, cluster 5 is very inactive other than in collateral switches, which could be further investigated, but I did not. Now we want to see how these transactions work over time.
+
+```{r, echo=FALSE}
+df["date"] = anydate(df$timestamp)
+df.clusters <- data.frame(user = df.users$user, cluster = km$cluster)
+df <- left_join(df, df.clusters, by = "user")
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+# 6-list of ggplot colors explicitly specified
+pgg <- gg_color_hue(6)
+cluster_names <- c('1' = "Cluster 1", '2' = "Cluster 2", '3' = "Cluster 3", '4' = "Cluster 4", '5' = "Cluster 5")
+ggplot(data = df[!(is.na(df$cluster)) & (df$type != "collateral"), ], aes(x = date,  group = type, color = type)) + 
+  geom_density()+
+  ggtitle("Transaction Types Over Time by User Cluster")+
+  labs(color = "Lengend")+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.5, color = "black")+
+  scale_x_date(date_breaks = "3 months", date_labels = "%b-%y")+
+  scale_color_manual("type", values = c("deposit"="green","borrow" = pgg[4], "redeem" = "yellow", "liquidation" = "red","repay"=pgg[6],"swap"=pgg[5]))+
+  scale_fill_manual("type", values = c("deposit"="green","borrow" = pgg[4], "redeem" = "yellow", "liquidation" = "red","repay"=pgg[6],"swap"=pgg[5]))+
+  facet_wrap(~ cluster, labeller = as_labeller(cluster_names))
+```
+
+It should be noted, in any graphic if there is a dotted vertical line, it shows the day (May 18th 2021) when China announced their ban on crypto. As we can see in this case, and it others, this caused a large shock to the market. Our borrowing clusters (1, 3, 4) were all heavily impacted and saw increases in liquidations. 
+
+### Discussion
+
+What we learn from this is that we can cluster users based on previous transactions and get some meaningful results. People borrowing money are far more susceptible to market shocks. On the other hand, we also have seen that many users are not overly active and are simply deposit their money to try and get a return. Also, we are now able to examine users who are more prone to being liquidated (those in cluster 2).
+
+## Problem 2
+
+Not only do we want to see how clusters interact in AAVE over time, we also want to see how the overall trends in AAVE work. 
+ 
+### Methods
+
+Most of this section involves a lot of work in ggplot to visualize different actions. It also involved me making a weekly data frame, where users transactions are averaged out to a weekly basis. 
+
+### Results
+
+Before analyzing trends in AAVE over time, I think it's a good idea to understand the scale of what we are working with.
+
+```{r, echo=FALSE}
+df["date"] = anydate(df$timestamp)
+unique_users <- df %>%
+  group_by(date)%>%
+  summarise(num_users = n_distinct(user))
+ggplot(unique_users) + geom_line(aes(x = date, y = num_users))+
+    geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.8, color = "black")+
+  ggtitle("How many people use AAVE every day?")+
+  scale_x_date(date_breaks = "3 months", date_labels = "%b-%y")+
+  labs(color = "Legend", y = "Number of Users")+
+  geom_ma(n = 30, aes(x=date, y = num_users, color = "7 Day Moving Average"))
+```
+
+We can see than recently there have been a little more than 500 people using AAVE v2 every day. This number peaked in May, soon after the China announcement, when the weekly average was over 1,000 users. What is interesting is that there has not really been an increase in the number of people per day, although the cumulative users is growing at a fairly constant rate. This means that many users are not active most days and some may have left the platform altogether.
+
+```{r, echo=FALSE}
+ggplot(df, aes(x = date)) + 
+  geom_histogram(binwidth = 7, color = "black", fill = "white")+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.8, color = "red")+
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%y")+
+  ggtitle("Number of Transactions per Week")
+```
+
+We can see that the chart of total transactions seems to follow pretty closely to the number of users. This is good, since I do not have to look into any weird descepancies. With that being said, we still want to further understand what is happening.
+
+```{r, echo=FALSE}
+df.weekly<- df%>%group_by(user, user_alias)%>%
+  dplyr::summarise(timefirst=min(anydate(timestamp)), timelast=max(anydate(timestamp)), N=n())
+#get the time the user has been active
+df.weekly$timeactive<-df.weekly$timelast-df.weekly$timefirst
+#get amounts for columns
+df$logUSD<-log10(df$amountUSD)
+df$logCollateralUSD<-log10(df$amountUSDCollateral)
+#get user's transaction information
+for(Type in unique(df$type)){
+  #filter for only transactions of certain type
+  df.type <-filter(df%>%group_by(user)%>%dplyr::count(type),type==Type)
+  #add  of each transaction type
+  if(Type!="liquidation" || Type!="swap"){
+    df.sum<-filter(df, type==Type)%>%
+      group_by(user)%>%
+      summarise(Sum=sum(logUSD))
+    colnames(df.sum)[2]<-paste('total_',Type,sep='')
+    df.weekly<-merge(x=df.weekly,y=df.sum,by="user",all.x=TRUE)
+  } 
+  
+  #add counts of transaction types to df
+  ntypes<-paste("n",Type,sep='')
+  colnames(df.type)[3]<-ntypes
+  df.weekly<-merge(x=df.weekly,y=select(df.type,user,ntypes),by="user",all.x=TRUE)
+}
+df.weekly <- rename(df.weekly, "name" = "user_alias")
+
+df.weekly$timeactive =as.numeric( df.weekly$timeactive / 7)
+df.weekly <- rename(df.weekly, "weeks" = "timeactive")
+one_day <- df.weekly %>%
+  filter(weeks == 0)
+df.weekly <- df.weekly %>%
+  filter(weeks > 0)
+df.weekly$N =df.weekly$N / df.weekly$weeks
+df.weekly[,7:20] <- df.weekly[,7:20] / df.weekly$weeks
+one_day$N <- one_day$N * 7
+one_day[,7:20] <- one_day[,7:20] * 7
+df.weekly <- rbind(df.weekly, one_day)
+df.weekly <- rename(df.weekly, "weekly_n" = "N")
+
+
+ggplot(df.weekly %>% filter(weekly_n <= 100), aes(x = weekly_n))+
+  geom_histogram(binwidth = 5, color = "black", fill = "white", aes(y = ..count../sum(..count..)))+
+  ggtitle("How often do people use AAVE in a week?")+
+  scale_y_continuous(labels=percent)+
+  labs(y = "Percent of Users", x = "Number of Transactions")
+```
+
+This confirms what I found earlier about many users not being very active. The majority of users have less than 10 transactions per active week. However, there are many outliers that are very active and fall into my first cluster. However, this does do a good job of showing why cluster 3 is the largest. 
+
+```{r, echo=FALSE}
+ggplot(df, aes(x = date)) + 
+  geom_histogram(binwidth = 1, color = "black", fill = "white")+
+  geom_vline(xintercept = as.numeric(as.Date("2021-05-18")), linetype=2, alpha = 0.8, color = "red")+
+  ggtitle("Number of Transactions per Day")+
+    scale_x_date(date_breaks = "3 months", date_labels = "%b-%y")+
+  facet_wrap(~ type)
+```	
+	
+This proves how shock events impact AAVE. We can see peaks in most types of transactions immediately following May 18th. We note that borrows seemed to be unaffected by the news, although a lot of people soon repayed their loans. In the redeem chart, we can see how a lot of people began to take their money out of the protocol, perhaps not trusting the falling prices of cryptocurrencies. However, what these charts lack is a way to see if the number of transactions is always related to the amount of money being moved. To do this, we need to build charts with mutiple scales.	
+
+```{r,echo=FALSE}
+all_deposits <- df %>%
+  filter(type == "deposit") %>%
+  group_by(date) %>%
+  summarise(value = sum(amountUSD), count = n())
+all_borrows <- df %>%
+  filter(type == "borrow") %>%
+  group_by(date) %>%
+  summarise(value = sum(amountUSD), count = n())
+all_redeems <- df %>%
+  filter(type == "redeem") %>%
+  group_by(date) %>%
+  summarise(value = sum(amountUSD), count = n())
+
+x <- mean(all_deposits$value) / mean(all_deposits$count)
+
+ggplot(all_deposits, aes(x = date))+ 
+  geom_line(aes(y = value, colour = "Amount"))+
+  geom_line(aes(y = count*x, colour = "# Transactions"))+
+  scale_y_continuous(labels = comma, sec.axis = sec_axis(~./x, name = "# of Deposits"))+
+  scale_colour_manual(values = c("blue", "red"))+
+  labs(y = "Amount (USD)",x = "Month",colour = "Parameter")+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  theme(legend.position = c(0.88, 0.9))+
+  ggtitle("Deposits Summary")
+
+x <- mean(all_borrows$value) / mean(all_borrows$count)
+
+ggplot(all_borrows, aes(x = date))+ 
+  geom_line(aes(y = value, colour = "Amount"))+
+  geom_line(aes(y = count*x, colour = "# Transactions"))+
+  scale_y_continuous(labels = comma, sec.axis = sec_axis(~./x, name = "# of Borrows"))+
+  scale_colour_manual(values = c("blue", "red"))+
+  labs(y = "Amount (USD)",x = "Month",colour = "Parameter")+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  theme(legend.position = c(0.88, 0.9))+
+  ggtitle("Borrows Summary")
+
+```
+	
+These show examples of how we can take a closer look at each type of transaction. In this case, I only showed borrows and deposits. We can see similar trends in both of these. Over time, the number of transactions per day has not greatly changed. However, we are now seeing much larger sums of money being used. In recent months, we can also see an increase in "shock" days, where the amount of money drastically increases for one day before returning to its normal level. Could there be shock events on all of these days?
+
+### Discussion
+
+We can see several trends that stand out. Throughout time, although the number of transactions are not increasing, we are seeing an increase in the USD amount of transactions. Also, even though the daily number of users is not increasing AAVE is continuing to attract new users. Finally, we saw that shock events can really impact the protocol as a whole and fill actively draw new activity in almost every transaction type.
+
+## Problem 3
+
+Coin Utilization (Total Borrows / Total Liquidity) is the main factor influencing the different interest rates. Each coin has its own optimal utilization rate, and a differing actual utility will move the interest rates. In order to make money in AAVE, you must either be able to know how the prices or interest rates of coins will move. For example, AMPL has recently had a borrow interest APY of more than 87,000%. If we are able to better predict how these interests rates will move, we will be able to make money. First we must gain a better understanding of how utilization works and how we can visualize it.
+ 
+### Methods
+
+I used utilization to be the following formula: (Total Borrows) / (Total Deposits - Total Redeems + Total Repays), and then converted it into a percentage. We can get this for every coin over time and then are able to graph them relative to other coins.
+	
+### Results
+
+First, it is helpful to fully understand what utilization looks like. The following chart will show how USDC is being used over time.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+coins <- "USDC"
+dates <- as.data.frame(unique(df$date))
+colnames(dates) <- c("date")
+coin <- df %>%
+  filter(reserve == coins)
+dep<- coin %>%
+  filter(type == "deposit") %>%
+  group_by(date) %>%
+  summarise(date = date, deposit_amount = cumsum(sum(amount)))%>%
+  distinct()
+red<-coin %>%
+  filter(type == "redeem") %>%
+  group_by(date) %>%
+  summarise(date= date, redeem_amount = cumsum(sum(amount)))%>%
+  distinct()
+rep <- coin %>%
+  filter(type == "repay") %>%
+  group_by(date) %>%
+  summarise(date = date, repay_amount = cumsum(sum(amount)))%>%
+  distinct()
+bor <- coin %>%
+  filter(type == "borrow") %>%
+  group_by(date) %>%
+  summarise(date = date, borrow_amount = cumsum(sum(amount)))%>%
+  distinct()
+util_summary <- dates %>% left_join(dep, by = "date")
+util_summary <- util_summary %>% left_join(red, by = "date")
+util_summary <- util_summary %>% left_join(rep, by = "date")
+util_summary <- util_summary %>% left_join(bor, by = "date")
+util_summary[is.na(util_summary)] <- 0
+util_summary <- util_summary %>%
+  arrange(date)
+util_summary$cum_deposit <- cumsum(util_summary$deposit_amount)
+util_summary$cum_redeem <- cumsum(util_summary$redeem_amount)
+util_summary$cum_borrow <- cumsum(util_summary$borrow_amount)
+util_summary$cum_repay <- cumsum(util_summary$repay_amount)
+util_summary$all_money <- util_summary$cum_deposit - util_summary$cum_redeem
+util_summary$rate <- round((util_summary$cum_borrow) / (util_summary$all_money +util_summary$cum_repay) *100,2)
+util_summary[is.na(util_summary)] <- 0
+
+x <- max(util_summary$all_money) / max(util_summary$rate)
+
+ggplot(util_summary, aes(x = date))+ 
+  #geom_line(aes(y = all_money, colour = "Overall Liquidity"))+
+  geom_line(aes(y = cum_deposit, colour = "Total Deposits"))+
+  geom_line(aes(y = cum_redeem, colour = "Total Redeems"))+
+  geom_line(aes(y = cum_borrow - cum_repay, colour = "Outstanding Borrows")) +
+  geom_line(aes(y = rate*x, colour = "Utilization Rate"))+
+  scale_y_continuous(labels = comma, sec.axis = sec_axis(~./x, name = "Utilization Rate (%)"))+
+  scale_colour_manual(values = c("blue", "dark green", "orange", "red"))+
+  labs(y = paste("Amount", coins),x = "Month",colour = "Parameter")+
+  scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  ggtitle(paste(coins,  "Utilization Summary"))
+```
+
+We can see that USDC has a high utilization rate, even approaching 100% at times. This chart let's us see how variations in certain transaction types can affect the coins interest rate. Now we want to make a dataframe storing all of this data for every coin so that we could see this plot for any desired coin.
+
+```{r, echo=FALSE, message=FALSE}
+coins <- unique(df$reserve)
+dates <- as.data.frame(unique(df$date))
+colnames(dates) <- c("date")
+util_summary <- as.Date(dates$date)
+util_summary <- as.data.frame(util_summary)
+colnames(util_summary) <- c("date")
+util_summary <- util_summary %>%
+    arrange(date)
+for (coin in coins) {
+  coin.df <- df %>%
+    filter(reserve == coin)
+  dep <- coin.df %>%
+    filter(type == "deposit") %>%
+    group_by(date) %>%
+    summarise(date = date, deposit_amount = cumsum(sum(amount)))%>%
+    distinct()
+  red<-coin.df %>%
+    filter(type == "redeem") %>%
+    group_by(date) %>%
+    summarise(date= date, redeem_amount = cumsum(sum(amount)))%>%
+    distinct()
+  rep <- coin.df %>%
+    filter(type == "repay") %>%
+    group_by(date) %>%
+    summarise(date = date, repay_amount = cumsum(sum(amount)))%>%
+    distinct()
+  bor <- coin.df %>%
+    filter(type == "borrow") %>%
+    group_by(date) %>%
+    summarise(date = date, borrow_amount = cumsum(sum(amount)))%>%
+    distinct()
+  util_summary <- util_summary %>% left_join(dep, by = "date")
+  util_summary <- util_summary %>% left_join(red, by = "date")
+  util_summary <- util_summary %>% left_join(rep, by = "date")
+  util_summary <- util_summary %>% left_join(bor, by = "date")
+  util_summary[is.na(util_summary)] <- 0
+
+  util_summary$cum_deposit <- cumsum(util_summary$deposit_amount)
+  util_summary$cum_redeem <- cumsum(util_summary$redeem_amount)
+  util_summary$cum_borrow <- cumsum(util_summary$borrow_amount)
+  util_summary$cum_repay <- cumsum(util_summary$repay_amount)
+  util_summary$all_money <- util_summary$cum_deposit - util_summary$cum_redeem
+  util_summary$rate <- round((util_summary$cum_borrow) / (util_summary$all_money +util_summary$cum_repay) *100,2)
+  colnames(util_summary)[which(names(util_summary)== "deposit_amount")] <- paste(coin, "_dep", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "redeem_amount")] <- paste(coin, "_red", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "repay_amount")] <- paste(coin, "_rep", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "borrow_amount")] <- paste(coin, "_bor", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "cum_deposit")] <- paste(coin, "_c_dep", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "cum_redeem")] <- paste(coin, "_c_red", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "cum_repay")] <- paste(coin, "_c_rep", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "cum_borrow")] <- paste(coin, "_c_bor", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "all_money")] <- paste(coin, "_all", sep = '')
+  colnames(util_summary)[which(names(util_summary)== "rate")] <- paste(coin, "_rate", sep = '')
+  head(util_summary)
+}
+util_summary[is.na(util_summary)] <- 0
+kable(head(util_summary[,1:5]))
+```
+
+This dataframe is much larger than what is shown, as it includes 10 columns for every coin in the dataset. However, it stores all of all results and doesn't make us rerun code to chart for different coins when building our app. Now, I divide the coins into their respective groups (stable, non-stable, Amm) and plot all of them to see if they have differences.
+
+```{r, echo=FALSE, message=FALSE}
+utils <- util_summary[grepl('_rate', colnames(util_summary))]
+utils["date"] = util_summary$date
+
+for ( col in 1:ncol(utils)-2){
+    colnames(utils)[col] <-  sub("_rate", "", colnames(utils)[col])
+}
+coins <- unique(as.vector(df$reserve)[df$reserve != ""])
+stable_coins <- c("USDT", "USDC", "SUSD", "TUSD", "DAI", "GUSD", "BUSD")
+Amm_coins <- as.vector(coins[grepl("Amm", coins)])
+helper_coins <- c(stable_coins, Amm_coins)
+unstable_coins <- setdiff(unique(df$reserve), helper_coins)
+# Get rid of empty string
+unstable_coins <- stri_remove_empty(unstable_coins, na_empty = FALSE)
+
+stable_utils <- utils[,c(stable_coins, "date")]
+stables_plot <- melt(stable_utils, id.vars = "date")
+ggplot(stables_plot, aes(date, y = value, color = variable))+
+  geom_line()+
+    labs(x = "Date", y = "Util. Percent")+
+    scale_x_date(date_breaks = "2 months", date_labels = "%b-%y")+
+  ggtitle("Stable Coins Utilization Rate")
+```
+
+We can see that all of the stable coins have high utilization rates throughout time. However, other than the one brief decrease in TUSD, they also are all fairly bunched together. As we'll see, this is not always the case. Let's look at the non-stable coins.
+
+```{r, echo=FALSE}
+unstable_utils <- utils[,c(unstable_coins, "date")]
+unstables_plot <- melt(unstable_utils, id.vars = "date")
+ggplot(unstables_plot, aes(date, y = value, color = variable))+
+  geom_line()+
+  ggtitle("Non-stable Coins Utilization Rate")+
+  labs(x = "Date", y = "Util. Percent")
+```
+
+Woah, what a mess. However, this does show the point that we are looking for. Non-stable coins have wide-ranging utilization rates that are much more subject to fluctuations. As mentioned, the deposit rate for AMPL this week was >87,000% because utilization got too high. However, some of these bigger coins will have a more stable utilization rate throughout time. Finally, we look at Amm coins.
+
+```{r, echo=FALSE}
+Amm_utils <- utils[,c(Amm_coins, "date")]
+Amm_plot <- melt(Amm_utils, id.vars = "date")
+ggplot(Amm_plot, aes(date, y = value, color = variable))+
+  geom_line()+
+  ggtitle("Amm Coins Utilization Rate")
+```
+
+These are different because several of them never get borrowed. This causes a big distinction betwee these coins. We can see that some behave more like the stable coins, although there appears to be more variation in their rates. 
+
+```{r}
+stable_only <- stable_utils[,stable_coins]
+stable_utils$average <- rowMeans(stable_only)
+stable_stdev <- rowSds(as.matrix(stable_utils[ , -which(names(stable_utils) %in% c("date"))]))
+unstable_only <- unstable_utils[,unstable_coins]
+unstable_utils$average <- rowMeans(unstable_only)
+unstable_stdev <- rowSds(as.matrix(unstable_utils[ , -which(names(unstable_utils) %in% c("date"))]))
+
+Amm_only <- Amm_utils[,Amm_coins]
+Amm_utils$average <- rowMeans(Amm_only)
+Amm_stdev <- rowSds(as.matrix(Amm_utils[ , -which(names(Amm_utils) %in% c("date"))]))
+
+averages <- data.frame(stable_utils$average, unstable_utils$average, Amm_utils$average, stable_utils$date)
+
+ggplot(averages, aes(x = stable_utils.date))+
+  geom_line(aes(y = stable_utils.average, color = "Stablecoins"))+
+  geom_errorbar(aes(ymin=stable_utils$average-stable_stdev, ymax=stable_utils$average+stable_stdev), width=.2,
+                position=position_dodge(0.05), alpha = 0.2, color = "blue")+
+  geom_line(aes(y = unstable_utils.average, color = "Non-stable Coins"))+
+  geom_errorbar(aes(ymin=unstable_utils$average-unstable_stdev, ymax=unstable_utils$average+unstable_stdev), width=.2,
+                position=position_dodge(0.05), alpha = 0.2, color = "darkgreen")+
+  geom_line(aes(y = Amm_utils.average, color = "Amm Coins"))+
+  geom_errorbar(aes(ymin=Amm_utils$average-Amm_stdev, ymax=Amm_utils$average+Amm_stdev), width=.2,
+                position=position_dodge(0.05), alpha = 0.2, color = "red")+
+  labs(x = "Date", y = "Utilization Rate", color = "Coin Type")+
+  ggtitle("Average Utilization by Coin Type")
+```
+
+Here we put it all together to see how it comes together. Sable coins also have the most stable utilization rates over time. Non-stable coins are getting borrowed with more frequency, although they have a wide standard deviation. Finally, we do not really need to analyze Amm coins since they seem to act independently of the other two groups. Now let's look at what coins perform the most similarly.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+if (!require("matrixcalc")) {
+   install.packages("matrixcalc")
+   library(matrixcalc)
+}
+cols <- utils[,1:53]
+corr <- cor(cols)
+res <-which(lower.triangle(corr)>.3, arr.ind = TRUE)
+data_res <- data.frame(res[res[,1] != res[,2],], correlation = corr[res[res[,1] != res[,2],]])
+data_res <- data_res %>%
+  arrange(desc(correlation))
+
+data_res$coin_1 <- colnames(utils)[data_res$row]
+data_res$coin_2 <- colnames(utils)[data_res$col]
+similar_coins <- data_res %>%
+                    select(coin_1, coin_2, correlation)
+rownames(similar_coins) <- 1:nrow(similar_coins)
+kable(similar_coins[1:20,])
+```
+
+This is helpful in showing how some coins have very similar utilization patterns. Could these then be used to predict future utilization or interest rates? Maybe, but either way I though the number of non-stable pairings was interesting since that group had a lot of variation. 
+
+### Discussion
+
+We can see big differences between how different types are used. Stable coins are borrowed much more frequently than other types, so they have less liquidity in the lending pool. However, non-stable coins are being borrowed more frequently than they used to. Also, stable coins all tend to act in the same manner, while there are large variations in the other groups.
+
+# Summary and Recommendations
+
+I'm making four main conclusions based off of this work:
+
+1- We are able to cluster users into groups that allow us the see the behavior of users who are often liquidated.
+
+2- Although the number of active users in AAVE has not increased, people are using larger amounts of money in their transactions.
+
+3- This market is heavily subject to shock events that will briefly disrupt transaction patterns.
+
+4- Stable coins are borrowed at much higher rates than other coins, and their is a wide variety of uses for these other non-stable coins.
+
+Going forward, I believe that predicting utilization/interest rates would be very helpful in terms of making money. Along with Jason's interests rates, we will be adding utilization to the coin page in our app. Finally, we could try to use clustering on weekly data (which I have) to try to predict which users are at higher risk of being liquidated in the near future. This would be helpful with the addition of Chris's new data.
+
+
+
+
+
+

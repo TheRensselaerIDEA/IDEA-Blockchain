@@ -1,0 +1,193 @@
+---
+title: "DAR F21 Project Status Notebook Assignment 4"
+author: "Jaimin Vyas"
+date: "10-01-2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DeFi"
+---
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#import libraries
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dplyr)
+}
+if (!require("devtools")) {
+  install.packages("devtools")
+  library(devtools)
+}
+if (!require("ggfortify")) {
+  install.packages("ggfortify")
+  library(ggfortify)
+}
+if (!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+if (!require("survival")) {
+  install.packages("survival")
+  library(survival)
+}
+if (!require("zoo")) {
+  install.packages("zoo")
+  library(zoo)
+}
+```
+
+```{r}
+borrows <- read_csv('../../Data/borrows.csv')
+deposits <- read_csv('../../Data/deposits.csv')
+raw_df <- read_rds('../../Data/transactions.Rds')
+```
+
+```{r}
+borrows <- raw_df %>%
+  filter(type=="borrow")
+
+deposits <- raw_df %>%
+  filter(type=="deposit")
+
+depositBorrow <- left_join(deposits,borrows,by="onBehalfOf") %>%
+  dplyr::rename(depositTime=timestamp.x) %>%
+  dplyr::rename(borrowTime=timestamp.y) %>%
+  group_by(onBehalfOf) %>%
+  dplyr::summarise(timeDiff=case_when(min(borrowTime)-min(depositTime)>0 ~ (min(borrowTime)-min(depositTime))/86400, TRUE ~ as.double(max(borrows$timestamp)/86400))) %>%
+  mutate(status=case_when(timeDiff==max(borrows$timestamp)/86400 ~ 0, timeDiff>0 ~ 1, TRUE ~ 0)) %>%
+  select(onBehalfOf,timeDiff,status)
+
+depositBorrow
+unique(depositBorrow$status)
+```
+
+```{r}
+km <- with(depositBorrow, Surv(timeDiff, status))
+head(km,80)
+```
+
+```{r}
+km_fit <- survfit(Surv(timeDiff, status) ~ 1, data=depositBorrow)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
+autoplot(km_fit,xlab="time (days)",ylab="Survival Rate",title="Survival Rate of Deposit before the first Borrow")
+```
+
+```{r}
+liquidations <- raw_df %>%
+  filter(type=="liquidation")
+```
+
+```{r}
+borrows2 <- raw_df %>%
+  filter(type=="borrow") %>%
+  select(onBehalfOf,borrowRateMode,borrowRate,reserve,amountUSD,timestamp) %>%
+  dplyr::rename(user=onBehalfOf)
+
+liquids <- raw_df %>%
+  filter(type=="liquidation") %>%
+  select(user)
+
+liquidModes <- left_join(borrows2,liquids,by="user")
+
+ggplot(liquidModes,aes(x=borrowRateMode)) + geom_bar()
+```
+
+```{r}
+liquidStable <- liquidModes %>%
+  filter(borrowRateMode=="Stable" & amountUSD <= 5000000 & borrowRate <= 20) %>%
+  select(borrowRate,reserve,amountUSD,timestamp)
+
+liquidVariable <- liquidModes %>%
+  filter(borrowRateMode=="Variable" & amountUSD <= 25000000 & borrowRate <= 5) %>%
+  select(borrowRate,reserve,amountUSD,timestamp)
+
+ggplot(liquidStable,aes(x=reserve,y=borrowRate)) + geom_boxplot(outlier.shape=NA) + ggtitle("Borrow Rate for Every Stable Borrow that Liquidated by Reserve")
+ggplot(liquidVariable,aes(x=reserve,y=borrowRate)) + geom_boxplot(outlier.shape=NA) + ggtitle("Borrow Rate for Every Variable Borrow that Liquidated by Reserve")
+
+ggplot(liquidStable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Amount USD vs Borrow Rate for every Stable Borrow that Liquidated")
+ggplot(liquidVariable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Amount USD vs Borrow Rate for every Variable Borrow that Liquidated")
+```
+
+```{r}
+big_liquidVariable <- liquidVariable %>%
+  filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI")
+
+big_liquidStable <- liquidStable %>%
+  filter(reserve=="USDC" | reserve=="USDT" | reserve=="DAI")
+
+ggplot(big_liquidVariable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Amount USD vs Borrow Rate for every Variable Borrow that Liquidated (Big 3)")
+ggplot(big_liquidStable,aes(x=borrowRate,y=amountUSD)) + geom_point() + ggtitle("Amount USD vs Borrow Rate for every Stable Borrow that Liquidated (Big 3)")
+```
+
+```{r}
+roll_big_liquidStable <- big_liquidStable %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg=zoo::rollmean(borrowRate,k=1,fill=NA)) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA)) %>%
+  dplyr::mutate(rollingAvg90=zoo::rollmean(borrowRate,k=90,fill=NA))
+
+ggplot(roll_big_liquidStable, aes(x=as_datetime(timestamp),y=rollingAvg90)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("90-Day Rolling Average for Stable Borrow Rates that Liquidated over Time") + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
+
+roll_big_liquidVariable <- big_liquidVariable %>%
+  dplyr::arrange(timestamp) %>%
+  dplyr::mutate(rollingAvg=zoo::rollmean(borrowRate,k=1,fill=NA)) %>%
+  dplyr::mutate(rollingAvg21=zoo::rollmean(borrowRate,k=21,fill=NA)) %>%
+  dplyr::mutate(rollingAvg90=zoo::rollmean(borrowRate,k=90,fill=NA))
+
+ggplot(roll_big_liquidVariable, aes(x=as_datetime(timestamp),y=rollingAvg90)) + geom_line() + xlab("Date") + ylab("Average Borrow Rate") + ggtitle("90-Day Rolling Average for Variable Borrow Rates that Liquidated over Time") + geom_vline(xintercept=as_datetime(1621344738), linetype="dotted")
+```
+
+## Weekly Work Summary
+
+* RCS ID: vyasj2
+* Project Name: DeFi
+* Summary of work: Corrected survival analysis graph and did additional analysis on borrow rates and their impact on liquidation
+
+* Summary of GitHub commits
+  * Branch name: dar-vyasj2
+  * analysis.Rmd - complete analysis of past two weeks
+
+* Presentations
+  *https://docs.google.com/presentation/d/1eVkf-xFs-Wm57odNED6eebXvjaKUZdA-JZ2O7r2B7Co/edit#slide=id.gf71b1f45de_1_3
+
+## Personal Contribution
+
+* I realized that my survival analysis was incorrect, because the line went all the way down to y=0, which is not what we want. So, I tweaked the code a little bit and used dplyr entirely to get the correct dataset, and now it looks more correct in the sense that it levels off at around 75%, meaning that 25% of all depositors borrowed soon after, and the remaining 75% of depositors did not borrow at all. This could account for yield farmers, because they do not borrow, they only loan their money out to accrue an interest over time.
+
+* I then wanted to find some other variables that might affect liquidation, and I settled on looking at borrow rates, since the total amount borrowed (in ETH) is included in the health factor calculation, which is the component that determined whether or not someone liquidates. To get my data I split the original data into borrows and liquidations, and did a left join so that I got all the users that borrowed and then liquidated. I decided to plot a few different plots, first finding the frequency of each type of borrow, Stable and Variable rate. Then, I split the data up into the two types, and plot some different graphs using that data. First I made a dotplot of the amountUSD vs the borrow rate, so I could get a general idea of how much was borrowed at what rate, that ended up being liquidated. I then split up the data into what I call the Big 3 - USDC, USDT, and DAI, since almost all borrows were done using one of those three reserves. Finally, I calculated a rolling average of 1 day, 21 days, and 90 days, and graphed the 90 day rolling average. From these graphs, I found an interesting result. I found that after some date in May (which we now know to be the day that China announced their crypto ban), the average borrow rate that led to liquidation leveled out, but the average variable rate behaved the exact opposite - it started jumping all over the place.
+
+## Future Steps
+
+* The next steps would be to interpret this result, and possibly see if there are other aspects in the data that were impacted by this event as well.

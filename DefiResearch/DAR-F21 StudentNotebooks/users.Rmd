@@ -1,0 +1,187 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+#import libraries
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dplyr)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+if (!require("devtools")) {
+  install.packages("devtools")
+  library(devtools)
+}
+if (!require("ggbiplot")) {
+  install_github("vqv/ggbiplot")
+  library(ggbiplot)
+}
+```
+We begin by loading the csv file in to a dataframe.
+```{r}
+<<<<<<< HEAD
+#load Rds (binary version of csv file) into dataframe
+df<-readRDS('../Data/transactions.Rds')
+
+# Let's take a quick look 
+=======
+#load in csv file to data frame
+df<-read_rds('../Data/transactions.Rds')
+>>>>>>> 449e7f225086a558f13f0699c8afffb897e4cf44
+head(df)
+```
+We reformat the dataframe so that each row represents a user, and the columns represent a summarization of the user's transaction history. 
+```{r}
+#group by user and get time of user's first and last transaction, as well as number of transactions
+df.users<- df%>%
+  group_by(user)%>%
+  summarise(timefirst=min(timestamp), timelast=max(timestamp), N=n())
+#get the time the user has been active
+df.users$timeactive<-df.users$timelast-df.users$timefirst
+<<<<<<< HEAD
+
+=======
+>>>>>>> 449e7f225086a558f13f0699c8afffb897e4cf44
+#get log amounts for columns
+df$logUSD<-log(df$amountUSD)
+df$logCollateralUSD<-log(df$amountUSDCollateral)
+#get user's transaction information
+<<<<<<< HEAD
+for(Type in unique(df$type)){
+=======
+for(Type in (unique(df$type))){
+>>>>>>> 449e7f225086a558f13f0699c8afffb897e4cf44
+  #filter for only transactions of certain type
+  df.type <-filter(df%>%group_by(user)%>%
+                     count(type),type==Type)
+  
+  #add means of each transaction type
+  if(Type!="liquidation" || Type!="swap"){
+    df.mean<-filter(df,type==Type)%>%
+      group_by(user)%>%
+      summarise(Mean=mean(logUSD))
+    colnames(df.mean)[2]<-paste('mean_',Type,sep='')
+    df.users<-merge(x=df.users,y=df.mean,by="user",all.x=TRUE)
+  } 
+  
+  #add counts of transaction types to df
+  ntypes<-paste("n",Type,sep='')
+  colnames(df.type)[3]<-ntypes
+  df.users<-merge(x=df.users,y=select(df.type,user,ntypes),by="user",all.x=TRUE)
+  
+  #get proportion of transaction types and weekly number of transaction type
+  df.users[paste("prop_",Type,sep='')]<-(df.users[ntypes]+.05)/((df.users$N)+.3)
+  df.users[paste("weekly_",Type,sep='')]<-df.users[ntypes]/(((df.users$timeactive)+1)/(3600*24*7))
+}
+df.users
+```
+Next, we select only the columns we wish to cluster on.
+```{r}
+#subset only columns we wish to scale by removing columns that we will not cluster on
+<<<<<<< HEAD
+df.sub<-select(df.users,-c(user,timefirst,timelast,nborrow,nrepay,nswap,nliquidation,nredeem,ndeposit,N))
+
+=======
+df.sub<-select(df.users,-c(user,timefirst,timelast,mean_liquidation,nborrow,nrepay,nswap,nliquidation,nredeem,ndeposit,N,mean_swap))
+>>>>>>> 449e7f225086a558f13f0699c8afffb897e4cf44
+#repalce missing values as 0's
+df.sub<-df.sub%>%replace(is.na(.),0)
+```
+We scale the data to prepare for PCA.
+```{r}
+#scale data
+df.scaled<-df.sub%>%mutate_all(scale)
+df.scaled
+```
+Now, we perform PCA on the scaled data. 
+```{r}
+#perform pca on data
+my.pca<-prcomp(df.scaled,retx=TRUE,center=FALSE,scale=FALSE) # Run PCA and save to my.pca
+<<<<<<< HEAD
+
+=======
+>>>>>>> 449e7f225086a558f13f0699c8afffb897e4cf44
+#make scree plot
+plot(my.pca, type="line")
+#summary of pca
+summary(my.pca)
+ncomps=5
+```
+Next, we plot a heatmap to show the makeups of the principal components. 
+```{r}
+V <- t(my.pca$rotation[,1:ncomps]) # We transpose to make the principal components be rows
+heatmap.2(V, main='Principal Components', cexRow=0.75, cexCol=0.75, scale="none", dendrogram="none",
+Colv= FALSE, Rowv=FALSE, tracecol=NA,density.info='none')
+```
+Finally, we run the kmeans clustering algorithm on the data. We select the number of clusters euqal to the number of selected components. 
+```{r}
+#run kmeans algorithm
+pca.matrix<-my.pca$x[,1:ncomps]
+set.seed(1)
+km <-kmeans(df.scaled,6)
+#plot frequencies of each cluster
+barplot(table(km$cluster),main="Kmeans Cluster Size")
+```
+Finally, we view the centers of the kmeans clusters.
+```{r}
+#make heatmap of cluster centers
+heatmap.2(km$centers,
+scale = "none",
+dendrogram = "none",
+Colv=FALSE,
+cexCol=1.0,
+main = "Kmeans Cluster Centers",
+trace ="none")
+```
+# Exploring the Influential Factors with a Biplot 
+```{r,fig.width=16,fig.height=8}
+plot1<-ggbiplot(my.pca,choices=c(1,2),
+  labels=rownames(df.scaled), #show point labels
+  var.axes=TRUE, # Display axes
+  ellipse = FALSE, # Don't display ellipse
+  obs.scale=1,
+  groups=as.factor(km$cluster)) +
+  ggtitle("User Data Projected on PC1 and PC2 ")
+plot1
+```
+
+```{r}
+means_borrow_df <- transactions %>% 
+  filter(type=="borrow") %>%
+  select(reserve,amount,borrowRate,borrowRateMode,type,amountUSD) %>%
+  summarise(mean_usd=mean(amountUSD),mean_count=mean(amount),mean_borrow_rate=mean(borrowRate))
+
+print(means_borrow_df)
+```
+

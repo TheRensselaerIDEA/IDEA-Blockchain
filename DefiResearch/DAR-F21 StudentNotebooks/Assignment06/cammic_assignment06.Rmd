@@ -1,0 +1,62 @@
+---
+title: "DAR F21 Project Status Notebook Template"
+author: "Chris Cammilleri"
+date: "11/19/21"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DeFi"
+---
+
+## Weekly Work Summary	
+
+**NOTE:** Follow an outline format; use bullets to express individual points. 
+
+* RCS ID: cammmic
+* Project Name: Blockchain Research
+* Summary of work since last week 
+
+    * I have been working on an algorithm to calculate the daily balances for user accounts
+    * So far, I have a basic version of this algorithm working, but more testing is needed
+    * I started to work on a way to visualize this data for a particular user
+
+* NEW: Summary of github issues added and worked 
+
+    * Submittes issue to create plots for user account balances
+    
+* Summary of github commits 
+
+    * Added python script for algorithm (UserSummary.ipynb)
+    * Uploaded csv file with a sample of the user data (usersdaily.csv)
+    
+## Personal Contribution	
+
+* All work was done on my own
+
+## Discussion of Primary Findings 	
+
+* I wrote an algorithm to calculate daily account balances for each user. The algorithm still needs to be tested more and has some bugs to be worked out. Here is the data for a sample user that the algorithm calculated. 
+
+```{r}
+#import libraries
+library(ggplot2)
+library(ggbiplot)
+library(tidyverse)
+```
+
+```{r}
+df<-read_csv('ViolaRodriguez.csv')
+head(df)
+```
+
+* We can see the amounts of tokens borrowed and deposited for each day, with interest being calculated. Next, we make a plot showing the amount of LINK this user had deposited over time. 
+
+```{r}
+ggplot(data=df, aes(x=date, y=LINK_deposited)) +
+  ggtitle('Viola Rodriguez')+
+  geom_line()
+```
+From this chart, we can clearly see the times that the user made a LINK deposit.
+In the future, I wish to further test the algorithm, and work on finding a way to visualize this data. 

@@ -1,0 +1,64 @@
+---
+title: "BlockchainL Project Status Notebook Template"
+author: "Chris Cammilleri"
+date: "30 September 2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "Decentralized Finance"
+---
+
+
+## Weekly Work Summary	
+
+* RCS ID: cammic
+* Project Name: Blockchain
+
+* This week, I have been working on gathering additional data to supplement the existing data. I have created two additional data sets. 
+
+* The first is called rates.csv. This file contains the borrow and deposit rates for each currency at each timestamp that they were updated. 
+
+* The second data set is called tokens.csv. This data set has each token as a row, and the columns describe various attributes about those tokens. 
+
+* After collecting the data, I performed some basic analysis on these new datasets. 
+
+* The notebook where I collected the data and performed analysis is titled GetReserveInfo.ipynb, and can be found on the github under ReferenceNotebooks. 
+
+## Personal Contribution	
+
+All contributions were completed by me. 
+
+## Discussion of Primary Findings 	
+
+For the first data set, I wanted to see what the spread of deposit rates looked like for a particular currency. I subsetted the data for the token CRV, and plotted a boxplot to show the spread in deposit rate.
+
+![](deposits.PNG)
+
+We can see that most of the time, the deposit rates stay low, but have many extreme outliers. 
+
+Next, I looked at the tokens.csv dataset. First, I wanted to investigate the usages for the tokens in the dataset. I made barplots to show the number of tokens that can be used in borrows, used as collateral, and can be borrowed with a stable borrow rate. 
+
+![](borrows.PNG)
+
+The majority of coins can be borrowed.
+
+![](collaterals.PNG)
+
+Most coins can also be used as collateral.
+
+![](stables.PNG)
+
+However, a minority of coins have stable borrow rates.
+
+Finally, I investigated the continuous columns in the dataset, reserveLiquidationBonus and reserveLiquidationThreshold. 
+	
+![](bonus.PNG)
+
+Many coins have bonus of 0,while the rest have bonuses between 10,000 and 12,000.
+
+![](thresh.PNG)
+
+Many coins have threshold of 0, while the rest range from about 6000 to 10,000.
+

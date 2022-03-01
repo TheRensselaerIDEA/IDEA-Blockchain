@@ -1,0 +1,355 @@
+---
+title: "DAR F21 Project Status"
+author: "Soumya Mishra"
+date: "10/28/2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+subtitle: "DeFi"
+---
+
+
+```{r setup, include=FALSE}
+# Set the default CRAN repository
+local({r <- getOption("repos")
+       r["CRAN"] <- "http://cran.r-project.org" 
+       options(repos=r)
+})
+
+# Set code chunk defaults
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load required packages; install if necessary
+# CAUTION: DO NOT interrupt R as it installs packages!!
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dp)
+}
+if (!require("devtools")) {
+  install.packages("devtools")
+  library(devtools)
+}
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+if (!require("plotly")) {
+  install.packages("plotly")
+  library(plotly)
+}
+if(!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+if(!require("survival")) {
+  install.packages("survival")
+  library(survival)
+}
+if(!require("survminer")) {
+  install.packages('survminer')
+  library(survminer)
+}
+if(!require("ranger")){
+  install.packages("ranger")
+  library(ranger)
+}
+if(!require("ggfortify")){
+  install.packages("ggfortify")
+  library(ggfortify)
+}
+```
+
+
+```{r}
+#load Rds (binary version of csv file) into dataframe
+# Assumes this notebook is in: ~/IDEA-Blockchain/DefiResearch/StudentNotebooks/Assignment02
+df<-read_rds('../../Data/transactions.Rds')
+
+# Let's take a quick look at the first few observation
+head(df)
+```
+
+
+
+#Analysis of Borrows to Deposits:
+
+```{r}
+borrows <- df %>%
+  filter(type=="borrow")
+
+deposits <- df %>%
+  filter(type=="deposit")
+
+depositBorrow <- left_join(deposits,borrows,by="user") %>%
+  dplyr::rename(depositTime=timestamp.x) %>%
+  dplyr::rename(borrowTime=timestamp.y) %>%
+  group_by(user) %>%
+  dplyr::summarise(timeDiff=case_when(min(borrowTime)-min(depositTime)>0 ~ min(borrowTime)-min(depositTime), TRUE ~ as.integer(21294796))) %>%
+  mutate(status=case_when(timeDiff==as.integer(21294796) ~ 0, timeDiff<=0 ~ 0, timeDiff>0 ~ 1)) %>%
+  select(user,timeDiff,status)
+```
+
+
+
+
+```{r}
+km <- with(depositBorrow, Surv(timeDiff/86400, status))
+head(km,80)
+```
+
+```{r}
+km_fit <- survfit(Surv(timeDiff/86400, status) ~ 1, data=depositBorrow)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
+autoplot(km_fit,xlab="time (days)",ylab="Survival Percent",title="Survival Analysis of Borrow to Deposit")
+
+```
+
+Deposits are the steepest of the survival analysis graphs. 
+
+
+#Analysis of Borrows to Repays:
+
+```{r}
+borrows <- df %>%
+  filter(type=="borrow")
+
+repays <- df %>%
+  filter(type=="repay")
+
+borrowRepay <- left_join(repays,borrows,by="user") %>%
+  dplyr::rename(repayTime=timestamp.x) %>%
+  dplyr::rename(borrowTime=timestamp.y) %>%
+  group_by(user) %>%
+  dplyr::summarise(timeDiff=case_when(min(borrowTime)-min(repayTime)>0 ~ min(borrowTime)-min(repayTime), TRUE ~ as.integer(21294796))) %>%
+  mutate(status=case_when(timeDiff==as.integer(21294796) ~ 0, timeDiff<=0 ~ 0, timeDiff>0 ~ 1)) %>%
+  select(user,timeDiff,status)
+
+
+```
+
+```{r}
+km <- with(borrowRepay, Surv(timeDiff/86400, status))
+head(km,80)
+```
+
+
+
+```{r}
+km_fit <- survfit(Surv(timeDiff/86400, status) ~ 1, data=borrowRepay)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
+autoplot(km_fit,xlab="time (days)",ylab="Survival Percent",title="Survival Analysis of Borrow to Repay")
+
+```
+
+Repayments occur at a much steeper curve before plateauing. 
+
+
+#Analysis of Deposits to Redeems
+
+```{r}
+dep <- df %>%
+  filter(type=="deposit")%>%
+  arrange(user)
+
+deposits<-dep[1:50000,]
+
+red <- df %>%
+  filter(type=="redeem")%>%
+  arrange(user)
+
+redeems<-red[1:50000,]
+
+depositRedeem <- left_join(redeems,deposits,by="user") %>%
+  dplyr::rename(depositTime=timestamp.x) %>%
+  dplyr::rename(redeemTime=timestamp.y) %>%
+  group_by(user) %>%
+  dplyr::summarise(timeDiff=case_when(min(redeemTime)-min(depositTime)>0 ~ min(depositTime)-min(redeemTime), TRUE ~ as.integer(21294796))) %>%
+  mutate(status=case_when(timeDiff==as.integer(21294796) ~ 0, timeDiff<=0 ~ 0, timeDiff>0 ~ 1)) %>%
+  select(user,timeDiff,status)
+
+
+```
+
+
+```{r}
+km <- with(depositRedeem, Surv(timeDiff/86400, status))
+head(km,80)
+```
+
+
+
+
+```{r}
+km_fit <- survfit(Surv(timeDiff/86400, status) ~ 1, data=depositRedeem)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
+autoplot(km_fit,xlab="time (days)",ylab="Survival Percent",title="Survival Analysis of Deposit to Redeem")
+
+```
+It seems redeeems and deposits do not function anywhere similar to how borrowing does.
+
+
+
+#Analysis of Borrows to Redeems
+```{r}
+borrows <- df %>%
+  filter(type=="borrow")
+
+redeems <- df %>%
+  filter(type=="redeem")
+
+borrowRedeem <- left_join(redeems,borrows,by="user") %>%
+  dplyr::rename(redeemTime=timestamp.x) %>%
+  dplyr::rename(borrowTime=timestamp.y) %>%
+  group_by(user) %>%
+  dplyr::summarise(timeDiff=case_when(min(borrowTime)-min(redeemTime)>0 ~ min(borrowTime)-min(redeemTime), TRUE ~ as.integer(21294796))) %>%
+  mutate(status=case_when(timeDiff==as.integer(21294796) ~ 0, timeDiff<=0 ~ 0, timeDiff>0 ~ 1)) %>%
+  select(user,timeDiff,status)
+
+
+```
+
+
+```{r}
+km <- with(borrowRedeem, Surv(timeDiff/86400, status))
+head(km,80)
+```
+
+
+
+```{r}
+km_fit <- survfit(Surv(timeDiff/86400, status) ~ 1, data=borrowRedeem)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
+autoplot(km_fit,xlab="time (days)",ylab="Survival Percent",title="Survival Analysis of Borrows to Redeem")
+
+```
+
+There is not as steep of a curve here which reflects redeeming an amount from the pool borrowed is slower. 
+
+#Analysis of borrows to liquidation
+
+```{r}
+borrows <- df %>%
+  filter(type=="borrow")
+
+liquidations <- df %>%
+  filter(type=="liquidation")
+
+borrowLiquidation <- left_join(liquidations,borrows,by="user") %>%
+  dplyr::rename(liquidationTime=timestamp.x) %>%
+  dplyr::rename(borrowTime=timestamp.y) %>%
+  group_by(user) %>%
+  dplyr::summarise(timeDiff=case_when(min(borrowTime)-min(liquidationTime)>0 ~ min(borrowTime)-min(liquidationTime), TRUE ~ as.integer(21294796))) %>%
+  mutate(status=case_when(timeDiff==as.integer(21294796) ~ 0, timeDiff<=0 ~ 0, timeDiff>0 ~ 1)) %>%
+  select(user,timeDiff,status)
+
+
+```
+
+
+```{r}
+km <- with(borrowLiquidation, Surv(timeDiff/86400, status))
+head(km,80)
+```
+
+```{r}
+km_fit <- survfit(Surv(timeDiff/86400, status) ~ 1, data=borrowLiquidation)
+summary(km_fit, times = c(1,30,60,90*(1:10)))
+autoplot(km_fit,xlab="time (days)",ylab="Survival Percent",title="Survival Analysis of Borrows to Liquidation")
+
+```
+
+This graph is by far the most jagged and I believe it is due to the lack of data for liquidation. I previously analyzed only 1-2% of the data ended in liquidation, thus a less smooth curve here. However I believe since liquidation is automatically not survival, the following graph is a more accurate without the survival package. For the upcoming week I may try to adjust the parameters for the survival percentage when it comes to liquidation. 
+
+```{r}
+#load liquidation data
+liquidation.df<-df%>% filter(type=="liquidation")%>%
+  select(user, timestamp)
+head(liquidation.df)
+#load borrows
+borrow.df<-df%>% filter(type=="borrow")%>%
+  select(onBehalfOf, timestamp)%>%
+  rename(user = onBehalfOf)
+head(borrow.df)
+
+#join table
+liqTable <- left_join(borrow.df,liquidation.df,by="user")%>%
+  arrange(user)%>%
+  rename(borrowTime=timestamp.x)%>%
+  rename(liquidationTime = timestamp.y)%>%
+  mutate(timeDiff = borrowTime-liquidationTime)%>%
+  filter(timeDiff>0)
+  
+head(liqTable)
+
+
+
+```
+
+```{r}
+# Basic density for liquidation
+p <- ggplot(liqTable, aes(x=timeDiff/86400)) +
+  xlim(0,300) +
+  ylim(0,0.03)+
+  xlab("Time Difference in Days")+
+  geom_density()+
+  ggtitle("Time to Liqudation from Borrow")
+p
+
+```
+
+## Weekly Work Summary	
+
+* RCS ID: mishrs4
+* Project Name: Defi
+* Summary of work since last week 
+
+
+https://docs.google.com/presentation/d/1YSJbGJxOD4ZigHVGgeTTbZ-rMI33HEqbT3aeKIGfgO4/edit#slide=id.p
+
+
+## Personal Contribution	
+
+I completed survival analysis of the various transaction types from borrowing from the Defi pool. I previously was not censoring the data and trying to do survival analysis through simple plotting of comparing the data by user overlap. I had several issues with installing the survival analysis package, but was finally able to get it to run and generate the following graphs.
+
+## Discussion of Primary Findings 	
+
+The main question I was looking to answer is "How well does DeFi replicate traditional finance? How do the transaction types differ?
+
+I found liquidation was most likely to occur the fastest, then deposits, redeemption, and then repayment of a borrow. 
+
+This differs from my previous week's results using my simple join of the users rather than the survival package.
+
+Something I found of interest that I don't completely understand yet, though plan on figuring out is why deposits and redeems don't function as borrowing does. I attempted to plot the entire set of deposits and redeems, to reach a max limit of space. So instead I truncated the data set to only include 5000 rows and see if I could work with a smaller set but still look at a decent number of users. The graph is significantly different than those of borrowing, which may be inherent to the nature of Defi where a deposit and redeem functions much less like a loan and more a simple transaction which seems to be reflected in the lack of a downward curve in the analysis of the data. 
+
+
+
+Currently I have analyzed how the time it takes to repay an amount borrowed looks over time, the time it takes to redeem an amount deposited looks over time, the time it takes to deposit an amount deposited looks over time, and the time it takes to reach liquidation. In the graphs there is a lot more of a spread for redeeming than repaying or depositing. 
+
+
+
