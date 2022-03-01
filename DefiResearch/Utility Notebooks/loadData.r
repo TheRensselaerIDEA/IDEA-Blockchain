@@ -3,12 +3,28 @@ library(dplyr)
 library(tidyr)
 library(lubridate)
 library(stringr)
-df<-read_csv("~/Grad School/Research/Bennett's Content/DeFi Git/IDEA-Blockchain/DefiResearch/Data/transactionsJan2022.csv")
 
-not_all_na <- function(x) any(!is.na(x))
+workingDirectory = getwd()
+dataPath = "/Data"
+transactionsFile = "/transactionsJan2022.csv"
 
+df<-read_csv(paste(workingDirectory, dataPath, transactionsFile, sep=""))
+
+gasFile <- "/avg_gas.csv"
+
+gas <- read_csv(paste(workingDirectory, dataPath, gasFile, sep=""))
+
+aavePriceFile <- "/hourly_prices.csv"
+
+aavePrices <- read_csv(paste(workingDirectory, dataPath, aavePriceFile, sep=""))
+
+aavePrices <- aavePrices %>%
+  rename(hour = HOUR, priceUSD = PRICE) %>%
+  select(hour, priceUSD)
 
 ## Helper functions
+not_all_na <- function(x) any(!is.na(x))
+
 activeCollateral <- function(usr, ts, collaterals) {
   userCollateral <- collaterals %>%
     filter(user == usr, timestamp <= ts) %>%
@@ -19,6 +35,12 @@ activeCollateral <- function(usr, ts, collaterals) {
     filter(enabledForCollateral == TRUE)
   return(userCollateral)
 }
+
+## Add the gas fees to the transaction data
+df <- df %>%
+  mutate(Date = floor_date(as_datetime(timestamp), unit = "hour")) %>%
+  left_join(gas, by = "Date") %>%
+  rename(gasFee = `Fee (USD)`)
 
 
 ## Create the basic dataframes for each transaction type:
@@ -94,8 +116,8 @@ cumulativeRedeems <- redeems %>%
 cumulativeBalances <- cumulativeDeposits %>%
   left_join(cumulativeRedeems, by = c("user", "reserve")) %>%
   mutate(cumulativeBalances = totalDeposited - totalRedeems)
-  
-  
+
+
 # Compute aggregate liquidations
 
 df2 <- left_join(df, reserveTypes, by="reserve") %>%
