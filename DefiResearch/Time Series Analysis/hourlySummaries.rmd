@@ -1,0 +1,150 @@
+---
+title: "Time Series Work"
+author: "Aaron Micah Green"
+date: "2/23/2022"
+output: html_document
+---
+## First, let's load the data using the loadData.r file:
+```{r, echo=FALSE, message=FALSE, warning=FALSE, tidy=TRUE, include=FALSE}
+rm(list = ls())
+source("../Utility Notebooks/loadData.r")
+library(ggplot2)
+```
+
+## In order to make our prediction of the AAVE token price possible, we need to convert our data from raw transactions into hourly summary features:
+```{r}
+hourlyGas <- gas %>%
+  rename(hour = Date, gasFee = `Fee (USD)`)
+
+hourlyTransactions <- aavePrices %>%
+  rename(aavePriceUSD = priceUSD) %>%
+  left_join(hourlyGas, by = "hour") %>%
+  left_join(ethPrices, by = "hour") %>%
+  rename(ethPriceUSD = priceUSD)
+
+hourlyDepositSummaries <- deposits %>%
+  mutate(hour = floor_date(as_datetime(timestamp), unit = "hour")) %>%
+  group_by(hour) %>%
+  transmute(numDeposits = n(),
+            amountDepositedUSD = sum(amountUSD),
+            uniqueUsersDeposits = n_distinct(user),
+            numReservesDeposited = n_distinct(reserve)) %>%
+  distinct()
+  
+hourlyRedeemSummaries <- redeems %>%
+  mutate(hour = floor_date(as_datetime(timestamp), unit = "hour")) %>%
+  group_by(hour) %>%
+  transmute(numRedeems = n(),
+            amountRedeemedUSD = sum(amountUSD),
+            uniqueUsersRedeems = n_distinct(user),
+            numReservesRedeemed = n_distinct(reserve)) %>%
+  distinct()
+
+hourlyBorrowSummaries <- borrows %>%
+  mutate(hour = floor_date(as_datetime(timestamp), unit = "hour")) %>%
+  group_by(hour) %>%
+  transmute(numBorrows = n(),
+            amountBorrowedUSD = sum(amountUSD),
+            uniqueUsersBorrows = n_distinct(user),
+            numReservesBorrowed = n_distinct(reserve)) %>%
+  distinct()
+
+hourlyRepaySummaries <- repays %>%
+  mutate(hour = floor_date(as_datetime(timestamp), unit = "hour")) %>%
+  group_by(hour) %>%
+  transmute(numRepays = n(),
+            amountRepayedUSD = sum(amountUSD),
+            uniqueUsersRepays = n_distinct(user),
+            numReservesRepayed = n_distinct(reserve)) %>%
+  distinct()
+
+hourlyLiquidationSummaries <- liquidations %>%
+  mutate(hour = floor_date(as_datetime(timestamp), unit = "hour")) %>%
+  group_by(hour) %>%
+  transmute(numLiquidations = n(),
+            amountCollateralLiquidatedUSD = sum(amountUSDCollateral),
+            amountPrincipalLiquidatedUSD = sum(amountUSDPrincipal),
+            uniqueLiquidators = n_distinct(liquidator),
+            uniqueLiquidatees = n_distinct(user),
+            numCollateralsLiquidated = n_distinct(collateralReserve),
+            numPrincipalsLiquidated = n_distinct(principalReserve)) %>%
+  distinct()
+
+hourlySwapSummaries <- swaps %>%
+  mutate(hour = floor_date(as_datetime(timestamp), unit = "hour")) %>%
+  group_by(hour) %>%
+  transmute(numSwaps = n(),
+            uniqueUsersSwaps = n_distinct(user),
+            numReservesSwapped = n_distinct(reserve)) %>%
+  distinct()
+
+hourlyCollateralSummaries <- collaterals %>%
+  mutate(hour = floor_date(as_datetime(timestamp), unit = "hour")) %>%
+  group_by(hour) %>%
+  transmute(numCollaterals = n(),
+            uniqueUsersCollaterals = n_distinct(user),
+            numReservesCollateral = n_distinct(reserve)) %>%
+  distinct()
+
+
+hourlySummaries <- left_join(hourlyTransactions, hourlyBorrowSummaries, by = "hour") %>%
+  left_join(hourlyDepositSummaries, by = "hour") %>%
+  left_join(hourlyRedeemSummaries, by = "hour") %>%
+  left_join(hourlyRepaySummaries, by = "hour") %>%
+  left_join(hourlyLiquidationSummaries, by = "hour") %>%
+  left_join(hourlySwapSummaries, by = "hour") %>%
+  left_join(hourlyCollateralSummaries, by = "hour") %>%
+  distinct() %>%
+  arrange(hour) %>%
+  mutate(aaveNextHourPrice = lead(aavePriceUSD), aaveLastHourPrice = lag(aavePriceUSD)) %>%
+  mutate(aaveHourlyChangeForward = aaveNextHourPrice - aavePriceUSD, aaveChangeSinceLastHour = aavePriceUSD - aaveLastHourPrice) %>%
+  select(-aaveNextHourPrice) %>%
+  mutate(aaveDirectionOfChange = sign(aaveHourlyChangeForward)) %>%
+  mutate(ethLastHourPrice = lag(ethPriceUSD)) %>%
+  mutate(ethChangeSinceLastHour = ethPriceUSD - ethLastHourPrice) %>%
+  mutate(ethDirectionOfChange = sign(ethChangeSinceLastHour))
+  
+
+
+hourlySummaries[is.na(hourlySummaries)] <- 0
+```
+
+```{r}
+hourlySummariesWithDirection <- hourlySummaries %>%
+  select(-aaveHourlyChange)
+linearModel <- lm(aaveDirectionOfChange ~., data = hourlySummariesWithDirection)
+summary(linearModel)
+
+
+hourlySummariesWithMagnitude <- hourlySummaries %>%
+  select(-aaveDirectionOfChange)
+
+linearModelMagnitude <- lm(aaveHourlyChange ~., data = hourlySummariesWithMagnitude)
+summary(linearModelMagnitude)
+
+```
+
+
+# Split the data into training and testing sets
+```{r}
+trainData = hourlySummaries[1:5000,]
+testData = hourlySummaries[5000:length(hourlySummaries),]
+
+xTrain <- trainData %>%
+  select(-hour, -aaveHourlyChange)
+yTrain <- trainData %>%
+  select(aaveHourlyChange)
+
+xTest <- testData %>%
+  select(-hour, -aaveHourlyChange)
+yTest <- testData %>%
+  select(aaveHourlyChange)
+
+```
+
+## Granger-Causality Test
+```{r}
+library(lmtest)
+grangertest(numBorrows ~ aaveChangeSinceLastHour, order = 48, data = hourlySummaries)
+grangertest(aaveHourlyChange ~ numBorrows, order = 4, data = hourlySummaries)
+```
