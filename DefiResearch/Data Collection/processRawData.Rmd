@@ -8,6 +8,7 @@ library(randomNames)
 
 # Load raw dataframes
 ```{r}
+dataPath = "./Data/"
 rawDataPath = "./Data/raw/"
 borrowsFile = "rawBorrowsAave.csv"
 collateralsFile = "rawCollateralsAave.csv"
@@ -175,4 +176,11 @@ aliasedTransactions <- cleanedTransactions %>%
   rename(onBehalfOfAlias = alias) %>%
   left_join(userAliases, by = c("liquidator" = "user")) %>%
   rename(liquidatorAlias = alias)
+```
+
+# Write processed transaction data to csv:
+```{r}
+write_csv(aliasedTransactions, paste(dataPath, "transactions.csv", sep=""))
+write_csv(reserveInfo, paste(dataPath, "reserveInfo.csv", sep=""))
+write_csv(reserveParamsHistory, paste(dataPath, "reserveParamsHistory.csv", sep=""))
 ```
