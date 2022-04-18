@@ -178,9 +178,16 @@ aliasedTransactions <- cleanedTransactions %>%
   rename(liquidatorAlias = alias)
 ```
 
+# Label each coin as stable or non-stable:
+```{r}
+stableCoins = c('TUSD','RAI','GUSD','BUSD','SUSD','DAI','FRAX','PAX','FEI','USDC','AMPL','USDT','AmmDAI','AmmUSDC','AmmUSDT')
+reserveInfoWithStability <- reserveInfo %>%
+  mutate(stable = (symbol %in% stableCoins))
+```
+
 # Write processed transaction data to csv:
 ```{r}
 write_csv(aliasedTransactions, paste(dataPath, "transactions.csv", sep=""))
-write_csv(reserveInfo, paste(dataPath, "reserveInfo.csv", sep=""))
+write_csv(reserveInfoWithStability, paste(dataPath, "reserveInfo.csv", sep=""))
 write_csv(reserveParamsHistory, paste(dataPath, "reserveParamsHistory.csv", sep=""))
 ```
