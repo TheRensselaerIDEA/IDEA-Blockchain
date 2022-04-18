@@ -3,34 +3,16 @@ library(dplyr)
 library(tidyr)
 library(lubridate)
 library(stringr)
+library(here)
 
-workingDirectory = getwd()
-dataPath = "/../Data"
-transactionsFile = "/transactionsJan2022.csv"
+dataPath = "./Data Collection/Data/"
+transactionsFile = "transactions.csv"
+reserveInfoFile = "reserveInfo.csv"
+reserveParamsHistoryFile = "reserveParamsHistory.csv"
 
-df<-read_csv(paste(workingDirectory, dataPath, transactionsFile, sep=""))
-
-gasFile <- "/avg_gas.csv"
-
-gas <- read_csv(paste(workingDirectory, dataPath, gasFile, sep=""))
-
-aavePriceFile <- "/hourly_prices.csv"
-
-aavePrices <- read_csv(paste(workingDirectory, dataPath, aavePriceFile, sep=""))
-
-aavePrices <- aavePrices %>%
-  dplyr::rename(hour = HOUR, priceUSD = PRICE) %>%
-  select(hour, priceUSD)
-
-
-ethPriceFile <- "/ethPrices.csv"
-
-ethPrices <- read_csv(paste(workingDirectory, dataPath, ethPriceFile, sep=""))
-
-ethPrices <- ethPrices %>%
-  rename(hour = HOUR, priceUSD = PRICE) %>%
-  select(hour, priceUSD)
-
+df<-read_csv(paste(dataPath, transactionsFile, sep=""))
+reserveInfo <- read_csv(paste(dataPath, reserveInfoFile, sep=""))
+reserveParamsHistory <- read_csv(paste(dataPath, reserveParamsHistoryFile, sep=""))
 
 ## Helper functions
 not_all_na <- function(x) any(!is.na(x))
@@ -45,13 +27,6 @@ activeCollateral <- function(usr, ts, collaterals) {
     filter(enabledForCollateral == TRUE)
   return(userCollateral)
 }
-
-## Add the gas fees to the transaction data
-df <- df %>%
-  mutate(Date = floor_date(as_datetime(timestamp), unit = "hour")) %>%
-  left_join(gas, by = "Date") %>%
-  dplyr::rename(gasFee = `Fee (USD)`)
-
 
 ## Create the basic dataframes for each transaction type:
 borrows <- df %>%
@@ -82,51 +57,23 @@ liquidations <- df %>%
   filter(type == "liquidation") %>%
   select(where(not_all_na))
 
-liquidationsPerformed <- liquidations %>%
-  mutate(liquidatee = user) %>%
-  mutate(liquidatee_alias = user_alias) %>%
-  mutate(user = liquidator) %>%
-  mutate(user_alias = liquidator_alias)
-
 ## Create some helpful, smaller dataframes that can easily be queried to find some useful info
-stableCoins <- df %>%
-  select(reserve, stableCoin) %>%
-  distinct() %>%
-  filter(stableCoin == TRUE) %>%
-  select(reserve)
+stableCoins <- reserveInfo %>%
+  filter(stable == TRUE) %>%
+  select(symbol) %>%
+  rename(reserve = symbol)
 
-nonStableCoins <- df %>%
-  select(reserve, stableCoin) %>%
-  distinct() %>%
-  filter(stableCoin == FALSE) %>%
-  select(reserve)
+nonStableCoins <- reserveInfo %>%
+  filter(stable == FALSE) %>%
+  select(symbol) %>%
+  rename(reserve = symbol)
 
-reserveTypes <- df %>%
-  select(reserve, stableCoin) %>%
-  distinct() %>%
-  mutate(reserveType = if_else(stableCoin == TRUE, "Stable", "Non-Stable")) %>%
-  select(reserve, reserveType) %>%
-  drop_na()
-
-## Calculate user balances for relevant transaction types (not taking interest into account)
-
-cumulativeDeposits <- deposits %>%
-  mutate(user = onBehalfOf, user_alias = onBehalfOf_alias) %>%
-  dplyr::group_by(user, reserve) %>%
-  arrange(timestamp) %>%
-  dplyr::summarise(user_alias, reserve, totalDeposited = sum(amountUSD)) %>%
-  distinct()
-
-cumulativeRedeems <- redeems %>%
-  mutate(uner = onBehalfOf, user_alias = onBehalfOf_alias) %>%
-  group_by(user, reserve) %>%
-  dplyr::summarise(user_alias, reserve, totalRedeems = sum(amountUSD)) %>%
-  distinct()
-
-cumulativeBalances <- cumulativeDeposits %>%
-  left_join(cumulativeRedeems, by = c("user", "reserve")) %>%
-  mutate(cumulativeBalances = totalDeposited - totalRedeems)
-
+reserveTypes <- reserveInfo %>%
+  select(symbol, stable) %>%
+  mutate(reserveType = if_else(stable == TRUE, "Stable", "Non-Stable")) %>%
+  select(symbol, reserveType) %>%
+  drop_na() %>%
+  rename(reserve = symbol)
 
 # Compute aggregate liquidations
 
@@ -158,7 +105,7 @@ aggregateLiquidations <- df2 %>%
   dplyr::rename(principalType = reserveType) %>%
   mutate(totalCollateralUSD = sum(amountUSDCollateral), totalPrincipalUSD = sum(amountUSDPrincipal))%>%
   dplyr::mutate(numLiquidations = n()) %>%
-  dplyr::summarise(user_alias, numLiquidations, liquidationDuration, liquidationStart, liquidationEnd, liquidationStartDatetime, liquidationEndDatetime,
+  dplyr::summarise(userAlias, numLiquidations, liquidationDuration, liquidationStart, liquidationEnd, liquidationStartDatetime, liquidationEndDatetime,
             collateralReserves = str_flatten(str_sort(unique(collateralReserve)), collapse = ","), 
             collateralTypes = str_flatten(str_sort(unique(collateralType)), collapse= ","),
             principalReserves = str_flatten(str_sort(unique(principalReserve)), collapse = ","),

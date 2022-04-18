@@ -1,0 +1,133 @@
+---
+title: "Liquidation Analysis"
+author: "Aaron Green"
+date: '2022-04-12'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(stringr)
+library(lubridate)
+library(plotly)
+library(ggplot2)
+```
+
+```{r}
+source("./Utility Notebooks/loadData.r")
+tokenInfo <- reserveParamsHistory %>%
+  mutate(datetime = as_datetime(timestamp)) 
+
+tokens <- reserveInfo %>%
+  mutate(reserve = symbol)
+
+tokenDecimals <- tokens %>%
+  select(reserve, decimals)
+
+tokenInfo <- tokenInfo %>%
+  mutate(totalLiquidity = totalLiquidity / 10^decimals, availableLiquidity = availableLiquidity / 10^decimals, totalLiquidityAsCollateral = totalLiquidityAsCollateral/10^decimals) 
+  
+tokenInfo <- tokenInfo %>%
+  mutate(day = ceiling_date(datetime, unit="day")) %>%
+  group_by(reserve, day) %>%
+  slice_max(timestamp) %>%
+  ungroup() %>%
+  group_by(reserve) %>%
+  arrange(timestamp) %>%
+  mutate(previousPriceUsd = lag(priceInUsd)) %>%
+  mutate(percentChangeInPrice = (priceInUsd/previousPriceUsd) - 1)
+
+topBorrowableTokens <- tokenInfo %>%
+  group_by(reserve) %>%
+  summarize(count = n()) %>%
+  left_join(tokens, by = "reserve") %>%
+  select(reserve, borrowingEnabled, usageAsCollateralEnabled, count) %>%
+  arrange(-count) %>%
+  filter(borrowingEnabled == TRUE) %>%
+  filter(reserve %in% nonStableCoins$reserve) 
+
+totalBorrowedLiquidities <- tokenInfo %>%
+  filter(reserve %in% topBorrowableTokens$reserve) %>%
+  mutate(totalBorrowed = totalLiquidity - availableLiquidity) %>%
+  group_by(day) %>%
+  summarize(totalBorrowedLiquidity = sum(totalBorrowed))
+
+borrowedTokenInfo <- tokenInfo %>%
+  filter(reserve %in% topBorrowableTokens$reserve) %>%
+  left_join(totalBorrowedLiquidities, by = "day") %>%
+  mutate(liquidityImportance = (totalLiquidity - availableLiquidity) / totalBorrowedLiquidity) %>%
+  mutate(reserveMarketShockFactor = percentChangeInPrice * liquidityImportance)
+
+marketShockFactorsBorrows <- borrowedTokenInfo %>%
+  group_by(day) %>%
+  summarize(marketShockFactor = sum(reserveMarketShockFactor)) %>%
+  filter(day >= "2021-01-01 00:00:00") %>%
+  filter(day <= "2022-03-01 00:00:00")
+
+marketShockFactorsBorrows <- na.omit(marketShockFactorsBorrows)
+
+borrowsMSPlot <- ggplotly(ggplot(marketShockFactorsBorrows, aes(day, marketShockFactor)) + geom_line() +geom_hline(aes(yintercept = -.13)) + ggtitle("Market Shock Factor for Borrowed Assets") + ylab("Market Shock Factor") + xlab("Day"))
+
+ggplotly(borrowsMSPlot)
+
+```
+
+```{r}
+topCollateralTokens <- tokenInfo %>%
+  group_by(reserve) %>%
+  summarize(count = n()) %>%
+  left_join(tokens, by = "reserve")%>%
+  select(reserve, borrowingEnabled, usageAsCollateralEnabled, count) %>%
+  arrange(-count) %>%
+  filter(usageAsCollateralEnabled == TRUE) %>%
+  filter(reserve %in% nonStableCoins$reserve) 
+
+totalCollateralLiquidities <- tokenInfo %>%
+  filter(reserve %in% topCollateralTokens$reserve) %>%
+  group_by(day) %>%
+  summarize(totalCollateralLiquidity = sum(totalLiquidityAsCollateral))
+
+collateralTokenInfo <- tokenInfo %>%
+  filter(reserve %in% topCollateralTokens$reserve) %>%
+  left_join(totalCollateralLiquidities, by = "day") %>%
+  mutate(liquidityImportance = totalLiquidityAsCollateral / totalCollateralLiquidity) %>%
+  mutate(reserveMarketShockFactor = percentChangeInPrice * liquidityImportance)
+
+marketShockFactorsCollateral <- collateralTokenInfo %>%
+  group_by(day) %>%
+  summarize(marketShockFactor = sum(reserveMarketShockFactor)) %>%
+  filter(day >= "2021-01-01 00:00:00")%>%
+  filter(day <= "2022-03-01 00:00:00")
+
+marketShockFactorsCollateral <- na.omit(marketShockFactorsCollateral)
+
+collateralsMSPlot <- ggplot(marketShockFactorsCollateral, aes(day, marketShockFactor)) + geom_line() +geom_hline(aes(yintercept = -.13)) + ggtitle("Market Shock Factor for Collateral Assets") + ylab("Market Shock Factor") + xlab("Day")
+
+collateralsMSPlot
+```
+
+```{r}
+liquidationsOverTime <- df %>%
+  filter(type == "liquidation") %>%
+  mutate(day = ceiling_date(datetime, unit = "day")) %>%
+  filter(day >= "2021-01-01 00:00:00") %>%
+  filter(day <= "2022-03-01 00:00:00") %>%
+  group_by(day) %>%
+  summarize(count = n(), principalLiquidated = sum(amountUSDPrincipal), collateralLiquidated = sum(amountUSDCollateral)) %>%
+  mutate(profit = collateralLiquidated - principalLiquidated)
+
+liquidationsPlot <- ggplot(liquidationsOverTime, aes(day, profit)) + geom_point()
+
+liquidationsPlot
+
+stackedPlot <- ggplot() + geom_line(data = liquidationsOverTime, mapping = aes(x=day, y=collateralLiquidated)) + geom_line(data = marketShockFactorsCollateral, mapping = aes(x = hour, y = marketShockFactor*1000), color = "red") +
+  scale_y_continuous(name = "Liquidations/day", 
+    sec.axis = sec_axis(~./1000, name = "Market Shock Factor"))
+
+stackedPlot
+
+```
