@@ -1,0 +1,178 @@
+# Load relevant libraries
+```{r}
+library(readr)
+library(dplyr)
+library(lubridate)
+library(randomNames)
+```
+
+# Load raw dataframes
+```{r}
+rawDataPath = "./Data/raw/"
+borrowsFile = "rawBorrowsAave.csv"
+collateralsFile = "rawCollateralsAave.csv"
+depositsFile = "rawDepositsAave.csv"
+liquidationsFile = "rawLiquidationsAave.csv"
+redeemsFile = "rawRedeemsAave.csv"
+repaysFile = "rawRepaysAave.csv"
+reserveInfoFile = "rawReserveInfoAave.csv"
+reserveParamsHistoryFile = "rawReserveParamsHistoryAave.csv"
+swapsFile = "rawSwapsAave.csv"
+
+rawBorrows <- read_csv(paste(rawDataPath, borrowsFile, sep=""))
+rawCollaterals <- read_csv(paste(rawDataPath, collateralsFile, sep = ""))
+rawDeposits <- read_csv(paste(rawDataPath, depositsFile, sep=""))
+rawLiquidations <- read_csv(paste(rawDataPath, liquidationsFile, sep=""))
+rawRedeems <- read_csv(paste(rawDataPath, redeemsFile, sep=""))
+rawRepays <- read_csv(paste(rawDataPath, repaysFile, sep=""))
+rawReserveInfo <- read_csv(paste(rawDataPath, reserveInfoFile, sep=""))
+rawReserveParamsHistory <- read_csv(paste(rawDataPath, reserveParamsHistoryFile, sep=""))
+rawSwaps <- read_csv(paste(rawDataPath, swapsFile, sep = ""))
+```
+
+# Update reserveParamsHistory with the symbol for each reserve:
+```{r}
+reserveInfo <- rawReserveInfo %>%
+  rename(reserveID = id)
+reserveParamsHistory <- rawReserveParamsHistory %>%
+  left_join(reserveInfo, by = "reserveID")
+
+transactionReserveSymbolsAndPrices <- reserveParamsHistory %>%
+  select(timestamp,reserveID, symbol, priceInUsd, decimals)
+```
+
+# Clean and combine transaction types into one large dataframe:
+```{r}
+borrows <- rawBorrows %>%
+  mutate(type = "borrow") %>%
+  left_join(transactionReserveSymbolsAndPrices, by = c("timestamp","reserveID")) %>%
+  mutate(amount = amount / (10^decimals)) %>%
+  mutate(amountUSD = amount * priceInUsd) %>%
+  mutate(reserve = symbol) %>%
+  mutate(user = userID) %>%
+  mutate(onBehalfOf = callerID) %>%
+  mutate(borrowRate = borrowRate / (10^25)) %>%
+  mutate(pool = poolID) %>%
+  select(timestamp, type, amount, amountUSD, reserve, user, onBehalfOf, borrowRate, borrowRateMode, priceInUsd, pool)
+
+collaterals <- rawCollaterals %>%
+  mutate(type = "collateral") %>%
+  mutate(user = userID, pool = poolID) %>%
+  left_join(transactionReserveSymbolsAndPrices, by = c("timestamp", "reserveID")) %>%
+  mutate(reserve = symbol) %>%
+  select(timestamp, user, pool, reserve, fromState, toState, type)
+
+deposits <- rawDeposits %>%
+  mutate(type = "deposit") %>%
+  mutate(user = userID, pool = poolID) %>%
+  left_join(transactionReserveSymbolsAndPrices, by = c("timestamp", "reserveID")) %>%
+  mutate(reserve = symbol) %>%
+  mutate(onBehalfOf = callerID) %>%
+  mutate(amount = amount / (10^decimals)) %>%
+  mutate(amountUSD = amount * priceInUsd) %>%
+  select(timestamp, type, amount, amountUSD, reserve, user, onBehalfOf, priceInUsd, pool)
+
+liquidationReserveInfo <- transactionReserveSymbolsAndPrices %>%
+  rename(principalReserveID = reserveID) %>%
+  rename(principalReserve = symbol) %>%
+  rename(principalPriceUSD = priceInUsd, principalDecimals = decimals) %>%
+  left_join(transactionReserveSymbolsAndPrices, by = c("timestamp")) %>%
+  rename(collateralReserveID = reserveID) %>%
+  rename(collateralReserve = symbol) %>%
+  rename(collateralPriceUSD = priceInUsd, collateralDecimals = decimals)
+
+
+liquidations <- rawLiquidations %>%
+  mutate(type = "liquidation") %>%
+  mutate(user = userID, pool = poolID) %>%
+  left_join(liquidationReserveInfo, by = c("timestamp", "principalReserveID", "collateralReserveID")) %>%
+  distinct() %>%
+  group_by(id) %>%
+  slice_head() %>%
+  ungroup() %>%
+  mutate(principalAmount = principalAmount / (10^principalDecimals), collateralAmount = collateralAmount / (10^collateralDecimals)) %>%
+  mutate(amountUSDPrincipal = principalAmount * principalPriceUSD, amountUSDCollateral = collateralAmount * collateralPriceUSD) %>%
+  select(timestamp, type, user, liquidator, pool, principalReserve, amountUSDPrincipal, principalAmount, collateralReserve, amountUSDCollateral, collateralAmount)
+  
+
+redeems <- rawRedeems %>%
+  mutate(type = "redeem") %>%
+  mutate(user = userID, pool = poolID) %>%
+  left_join(transactionReserveSymbolsAndPrices, by = c("timestamp", "reserveID")) %>%
+  mutate(reserve = symbol) %>%
+  mutate(onBehalfOf = toID) %>%
+  mutate(amount = amount / (10^decimals)) %>%
+  mutate(amountUSD = amount * priceInUsd) %>%
+  select(timestamp, type, amount, amountUSD,  reserve, user, onBehalfOf, priceInUsd, pool)
+
+repays <- rawRepays %>%
+  mutate(type = "repay")%>%
+  mutate(user = userID, pool = poolID) %>%
+  left_join(transactionReserveSymbolsAndPrices, by = c("timestamp", "reserveID")) %>%
+  mutate(reserve = symbol) %>%
+  mutate(onBehalfOf = repayerID) %>%
+  mutate(amount = amount / (10^decimals)) %>%
+  mutate(amountUSD = amount * priceInUsd) %>%
+  select(timestamp, type, amount, amountUSD, reserve, user, onBehalfOf, priceInUsd, pool)
+
+swaps <- rawSwaps %>%
+  mutate(type = "swap") %>%
+  mutate(user = userID, pool = poolID) %>%
+  mutate(stableBorrowRate = stableBorrowRate / (10^25), variableBorrowRate = variableBorrowRate / (10^25)) %>%
+  left_join(transactionReserveSymbolsAndPrices, by = c("timestamp","reserveID")) %>%
+  mutate(reserve = symbol) %>%
+  select(timestamp, type, reserve, user, pool, borrowRateModeTo, borrowRateModeFrom, stableBorrowRate, variableBorrowRate)
+
+cleanedTransactions <- borrows %>%
+  bind_rows(collaterals) %>%
+  bind_rows(deposits) %>%
+  bind_rows(liquidations) %>%
+  bind_rows(redeems) %>%
+  bind_rows(repays) %>%
+  bind_rows(swaps)
+```
+
+# Add user aliases to the transaction data:
+```{r}
+uniqueUsers <- cleanedTransactions %>%
+  select(user)
+
+uniqueOnBehalfOfs <- cleanedTransactions %>%
+  select(onBehalfOf) %>%
+  mutate(user = onBehalfOf) %>%
+  select(user)
+
+uniqueLiquidators <- cleanedTransactions %>%
+  select(liquidator) %>%
+  mutate(user = liquidator) %>%
+  select(user)
+
+uniqueUsers <- uniqueUsers %>%
+  bind_rows(uniqueOnBehalfOfs) %>%
+  bind_rows(uniqueLiquidators) %>%
+  distinct()
+
+uniqueUsers <- na.omit(uniqueUsers)
+
+aliases = NULL
+set.seed(69420) # Dank seeding
+while(length(aliases[,1]) < length(uniqueUsers$user)){
+  alias <- randomNames(1000, name.order = "first.last", name.sep = " ", sample.with.replacement = FALSE)
+  aliases <- aliases %>%
+    bind_rows(data.frame(alias)) %>%
+    distinct()
+}
+
+aliases <- aliases %>%
+  head(length(uniqueUsers$user))
+
+userAliases <- bind_cols(uniqueUsers, aliases)
+
+aliasedTransactions <- cleanedTransactions %>%
+  left_join(userAliases, by = "user") %>%
+  rename(userAlias = alias) %>%
+  left_join(userAliases, by = c("onBehalfOf" = "user")) %>%
+  rename(onBehalfOfAlias = alias) %>%
+  left_join(userAliases, by = c("liquidator" = "user")) %>%
+  rename(liquidatorAlias = alias)
+```

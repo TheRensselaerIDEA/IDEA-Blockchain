@@ -1,0 +1,428 @@
+```{r}
+library(ghql)
+library(jsonlite)
+library(stringr)
+library(dplyr)
+library(readr)
+```
+
+
+```{r}
+apiURL = 'https://api.thegraph.com/subgraphs/name/aave/protocol-v2'
+
+con <- GraphqlClient$new(url = apiURL)
+
+dataPath = "./Data/raw/"
+
+getOldData <- function(fileName){
+  tryCatch({
+    read.csv(paste(dataPath, fileName, sep=""))
+  },
+  error = function(cond) {
+    message("Previous data not found.")
+  })
+}
+```
+
+# Get (or update) borrows from AAVEv2 Mainnet:
+```{r}
+## First, let's check for the existence of borrowsAave.csv and see if we need to get all borrows or just the more recent borrows:
+borrowsFile <- "rawBorrowsAave.csv"
+borrows <- getOldData(borrowsFile)
+
+lastTimestamp = 0
+
+if(!is.null(borrows)){
+  lastTimestamp = max(borrows$timestamp)
+}
+
+    
+repeat{
+  qry <- Query$new()
+  query = str_squish(str_c('query { borrows(first:1000 orderBy: timestamp where: {timestamp_gt:',lastTimestamp,'}){
+                           id, timestamp, amount, borrowRate, borrowRateMode,
+                           user{id},
+                           caller{id},
+                           reserve{id},
+                           pool{id}
+                           }}',sep = ''))
+  
+  qry$query("borrows", query)
+  
+  response <- con$exec(qry$queries$borrows) %>% fromJSON()
+  borrows <- borrows %>%
+    bind_rows(response$data$borrows) %>%
+    distinct()
+  
+  lastTimestamp = max(response$data$borrows$timestamp)
+ 
+  if(length(response$data$borrows$id) < 1000){
+    break
+  } 
+}
+
+borrows <- borrows %>%
+  mutate(userID = borrows$user$id, callerID = borrows$caller$id, reserveID = borrows$reserve$id, poolID = borrows$pool$id) %>%
+  select(-user, -caller, -reserve, -pool)
+
+write_csv(borrows, file = str_c(dataPath, borrowsFile, sep=''))
+```
+
+# Get (or update) deposits from AAVEv2 Mainnet:
+```{r}
+depositsFile <- "rawDepositsAave.csv"
+deposits <- getOldData(depositsFile)
+
+lastTimestamp = 0
+
+if(!is.null(deposits)){
+  lastTimestamp = max(deposits$timestamp)
+}
+
+    
+repeat{
+  qry <- Query$new()
+  query = str_squish(str_c('query { deposits(first:1000 orderBy: timestamp where: {timestamp_gt:',lastTimestamp,'}){
+                           id, timestamp, amount,
+                           user{id},
+                           caller{id},
+                           reserve{id},
+                           pool{id}
+                           }}',sep = ''))
+  
+  qry$query("deposits", query)
+  
+  response <- con$exec(qry$queries$deposits) %>% fromJSON()
+  deposits <- deposits %>%
+    bind_rows(response$data$deposits) %>%
+    distinct()
+  
+  lastTimestamp = max(response$data$deposits$timestamp)
+ 
+  if(length(response$data$deposits$id) < 1000){
+    break
+  } 
+}
+
+deposits <- deposits %>%
+  mutate(userID = deposits$user$id, callerID = deposits$caller$id, reserveID = deposits$reserve$id, poolID = deposits$pool$id) %>%
+  select(-user, -caller, -reserve, -pool)
+
+write_csv(deposits, file = str_c(dataPath, depositsFile, sep=''))
+```
+
+# Get (or update) collaterals from AAVEv2 Mainnet:
+```{r}
+collateralsFile <- "rawCollateralsAave.csv"
+collaterals <- getOldData(collateralsFile)
+
+lastTimestamp = 0
+
+if(!is.null(collaterals)){
+  lastTimestamp = max(collaterals$timestamp)
+}
+
+    
+repeat{
+  qry <- Query$new()
+  query = str_squish(str_c('query { usageAsCollaterals(first:1000 orderBy: timestamp where: {timestamp_gt:',lastTimestamp,'}){
+                           id, timestamp, fromState, toState,
+                           user{id},
+                           reserve{id},
+                           pool{id}
+                           }}',sep = ''))
+  
+  qry$query("collaterals", query)
+  
+  response <- con$exec(qry$queries$collaterals) %>% fromJSON()
+  collaterals <- collaterals %>%
+    bind_rows(response$data$usageAsCollaterals) %>%
+    distinct()
+  
+  lastTimestamp = max(response$data$usageAsCollaterals$timestamp)
+ 
+  if(length(response$data$usageAsCollaterals$id) < 1000){
+    break
+  } 
+}
+
+collaterals <- collaterals %>%
+  mutate(userID = collaterals$user$id, reserveID = collaterals$reserve$id, poolID = collaterals$pool$id) %>%
+  select(-user, -reserve, -pool)
+
+write_csv(collaterals, file = str_c(dataPath, collateralsFile, sep=''))
+```
+
+# Get (or update) repays from AAVEv2 Mainnet:
+```{r}
+repaysFile <- "rawRepaysAave.csv"
+repays <- getOldData(repaysFile)
+
+lastTimestamp = 0
+
+if(!is.null(repays)){
+  lastTimestamp = max(repays$timestamp)
+}
+
+    
+repeat{
+  qry <- Query$new()
+  query = str_squish(str_c('query { repays(first:1000 orderBy: timestamp where: {timestamp_gt:',lastTimestamp,'}){
+                           id, timestamp, amount,
+                           user{id},
+                           repayer{id},
+                           reserve{id},
+                           pool{id}
+                           }}',sep = ''))
+  
+  qry$query("repays", query)
+  
+  response <- con$exec(qry$queries$repays) %>% fromJSON()
+  repays <- repays %>%
+    bind_rows(response$data$repays) %>%
+    distinct()
+  
+  lastTimestamp = max(response$data$repays$timestamp)
+ 
+  if(length(response$data$repays$id) < 1000){
+    break
+  } 
+}
+
+repays <- repays %>%
+  mutate(userID = repays$user$id, repayerID = repays$repayer$id, reserveID = repays$reserve$id, poolID = repays$pool$id) %>%
+  select(-user, -repayer, -reserve, -pool)
+
+write_csv(repays, file = str_c(dataPath, repaysFile, sep=''))
+```
+# Get (or update) redeems from AAVEv2 Mainnet
+```{r}
+redeemsFile <- "rawRedeemsAave.csv"
+redeems <- getOldData(redeemsFile)
+
+lastTimestamp = 0
+
+if(!is.null(redeems)){
+  lastTimestamp = max(redeems$timestamp)
+}
+
+    
+repeat{
+  qry <- Query$new()
+  query = str_squish(str_c('query { redeemUnderlyings(first:1000 orderBy: timestamp where: {timestamp_gt:',lastTimestamp,'}){
+                           id, timestamp, amount,
+                           user{id},
+                           to{id},
+                           reserve{id},
+                           pool{id}
+                           }}',sep = ''))
+  
+  qry$query("redeems", query)
+  
+  response <- con$exec(qry$queries$redeems) %>% fromJSON()
+  redeems <- redeems %>%
+    bind_rows(response$data$redeemUnderlyings) %>%
+    distinct()
+  
+  lastTimestamp = max(response$data$redeemUnderlyings$timestamp)
+ 
+  if(length(response$data$redeemUnderlyings$id) < 1000){
+    break
+  } 
+}
+
+redeems <- redeems %>%
+  mutate(userID = redeems$user$id, toID = redeems$to$id, reserveID = redeems$reserve$id, poolID = redeems$pool$id) %>%
+  select(-user, -to, -reserve, -pool)
+
+write_csv(redeems, file = str_c(dataPath, redeemsFile, sep=''))
+```
+
+# Get (or update) swaps from AAVEv2 Mainnet
+```{r}
+swapsFile <- "rawSwapsAave.csv"
+swaps <- getOldData(swapsFile)
+
+lastTimestamp = 0
+
+if(!is.null(swaps)){
+  lastTimestamp = max(swaps$timestamp)
+}
+
+    
+repeat{
+  qry <- Query$new()
+  query = str_squish(str_c('query { swaps(first:1000 orderBy: timestamp where: {timestamp_gt:',lastTimestamp,'}){
+                           id, timestamp, borrowRateModeFrom, borrowRateModeTo, stableBorrowRate, variableBorrowRate,
+                           user{id},
+                           reserve{id},
+                           pool{id}
+                           }}',sep = ''))
+  
+  qry$query("swaps", query)
+  
+  response <- con$exec(qry$queries$swaps) %>% fromJSON()
+  swaps <- swaps %>%
+    bind_rows(response$data$swaps) %>%
+    distinct()
+  
+  lastTimestamp = max(response$data$swaps$timestamp)
+ 
+  if(length(response$data$swaps$id) < 1000){
+    break
+  } 
+}
+
+swaps <- swaps %>%
+  mutate(userID = swaps$user$id, reserveID = swaps$reserve$id, poolID = swaps$pool$id) %>%
+  select(-user, -reserve, -pool)
+
+write_csv(swaps, file = str_c(dataPath, swapsFile, sep=''))
+```
+
+
+# Get (or update) liquidations from AAVEv2 Mainnet
+```{r}
+liquidationsFile <- "rawLiquidationsAave.csv"
+liquidations <- getOldData(liquidationsFile)
+
+lastTimestamp = 0
+
+if(!is.null(liquidations)){
+  lastTimestamp = max(liquidations$timestamp)
+}
+
+    
+repeat{
+  qry <- Query$new()
+  query = str_squish(str_c('query { liquidationCalls(first:1000 orderBy: timestamp where: {timestamp_gt:',lastTimestamp,'}){
+                           id, timestamp, principalAmount, collateralAmount,
+                           user{id},
+                           liquidator,
+                           principalReserve{id},
+                           collateralReserve{id},
+                           pool{id}
+                           }}',sep = ''))
+  
+  qry$query("liquidations", query)
+  
+  response <- con$exec(qry$queries$liquidations) %>% fromJSON()
+  liquidations <- liquidations %>%
+    bind_rows(response$data$liquidationCalls) %>%
+    distinct()
+  
+  lastTimestamp = max(response$data$liquidationCalls$timestamp)
+ 
+  if(length(response$data$liquidationCalls$id) < 1000){
+    break
+  } 
+}
+
+liquidations <- liquidations %>%
+  mutate(userID = liquidations$user$id, principalReserveID = liquidations$principalReserve$id, collateralReserveID = liquidations$collateralReserve$id, poolID = liquidations$pool$id) %>%
+  select(-user, -principalReserve, -collateralReserve, -pool)
+
+write_csv(liquidations, file = str_c(dataPath, liquidationsFile, sep=''))
+```
+
+# Get (or update) reserveParamsHistory from AAVEv2 Mainnet:
+```{r}
+reserveParamsHistoryFile <- "rawReserveParamsHistoryAave.csv"
+reserveParamsHistory <- getOldData(reserveParamsHistoryFile)
+
+lastTimestamp = 0
+
+if(!is.null(reserveParamsHistory)){
+  lastTimestamp = max(reserveParamsHistory$timestamp)
+}
+
+    
+repeat{
+  qry <- Query$new()
+  query = str_squish(str_c('query { reserveParamsHistoryItems(first:1000 orderBy: timestamp where: {timestamp_gt:',lastTimestamp,'}){
+                           id,
+                           reserve{id},
+                timestamp,
+                priceInUsd,
+                priceInEth,
+                liquidityIndex,
+                totalLiquidity,
+                liquidityRate,
+                availableLiquidity,
+                utilizationRate,
+                totalLiquidityAsCollateral,
+                stableBorrowRate,
+                averageStableBorrowRate,
+                variableBorrowRate,
+                totalScaledVariableDebt,
+                totalCurrentVariableDebt,
+                totalPrincipalStableDebt
+                           }}',sep = ''))
+  
+  qry$query("reserveParamsHistory", query)
+  
+  response <- con$exec(qry$queries$reserveParamsHistory) %>% fromJSON()
+  reserveParamsHistory <- reserveParamsHistory %>%
+    bind_rows(response$data$reserveParamsHistoryItems) %>%
+    distinct()
+  
+  lastTimestamp = max(response$data$reserveParamsHistoryItems$timestamp)
+ 
+  if(length(response$data$reserveParamsHistoryItems$id) < 1000){
+    break
+  } 
+}
+
+reserveParamsHistory <- reserveParamsHistory %>%
+  mutate(reserveID = reserveParamsHistory$reserve$id) %>%
+  select(-reserve)
+
+write_csv(reserveParamsHistory, file = str_c(dataPath, reserveParamsHistoryFile, sep=''))
+
+```
+
+# Get (or update) reserveInfo from AAVEv2 Mainnet:
+```{r}
+reserveInfoFile <- "rawReserveInfoAave.csv"
+reserveInfo <- getOldData(reserveInfoFile)
+    
+repeat{
+  qry <- Query$new()
+  query = str_squish(str_c('query { reserves(first:1000){
+                           id, symbol, name, decimals,
+                           usageAsCollateralEnabled,
+                           borrowingEnabled,
+                           stableBorrowRateEnabled,
+                           isActive,
+                           isFrozen,
+                           reserveInterestRateStrategy,
+                           optimalUtilisationRate,
+                           variableRateSlope1,
+                           variableRateSlope2,
+                           stableRateSlope1,
+                           stableRateSlope2,
+                           baseVariableBorrowRate,
+                           baseLTVasCollateral,
+                           reserveLiquidationThreshold,
+                           reserveLiquidationBonus,
+                           pool{id}
+                           }}',sep = ''))
+  
+  qry$query("reserveInfo", query)
+  
+  response <- con$exec(qry$queries$reserveInfo) %>% fromJSON()
+  reserveInfo <- reserveInfo %>%
+    bind_rows(response$data$reserves) %>%
+    distinct()
+ 
+  if(length(response$data$reserves$id) < 1000){
+    break
+  } 
+}
+
+reserveInfo <- reserveInfo %>%
+  mutate(poolID = reserveInfo$pool$id) %>%
+  select(-pool)
+
+write_csv(reserveInfo, file = str_c(dataPath, reserveInfoFile, sep=''))
+```
