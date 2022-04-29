@@ -1,0 +1,413 @@
+---
+title: "Liquidation Analysis"
+author: "Aaron Green"
+date: '2022-04-12'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(stringr)
+library(lubridate)
+library(plotly)
+library(ggplot2)
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+  library(ggplot2)
+}
+if (!require("gplots")) {
+  install.packages("gplots")
+  library(gplots)
+}
+
+if (!require("knitr")) {
+  install.packages("knitr")
+  library(knitr)
+}
+
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  library(dplyr)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+if (!require("beeswarm")) {
+  install.packages("beeswarm")
+  library(beeswarm)
+}
+if (!require("tidyverse")) {
+  install.packages("tidyverse")
+  library(tidyverse)
+}
+if (!require("ggbeeswarm")) {
+  install.packages("ggbeeswarm")
+  library(ggbeeswarm)
+}
+if (!require("xts")) {
+  install.packages("xts")
+  library(xts)
+}
+if (!require("plotly")) {
+  install.packages("plotly")
+  library(plotly)
+}
+if (!require("ggrepel")) {
+  install.packages("ggrepel")
+  library(ggrepel)
+}
+if (!require("sjmisc")) {
+  install.packages("sjmisc")
+  library(sjmisc)
+}
+if (!require("sjmisc")) {
+  install.packages("sjmisc")
+  library(sjmisc)
+}
+if (!require("lubridate")) {
+  install.packages("lubridate")
+  library(lubridate)
+}
+
+if (!require("rpart")) {
+  install.packages("rpart")
+  library(rpart)
+}
+
+if (!require("randomForest")) {
+  install.packages("randomForest")
+  library(randomForest)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+
+if (!require("RColorBrewer")) {
+  install.packages("RColorBrewer")
+  library(RColorBrewer)
+}
+
+if (!require("readxl")){
+  install.packages("readxl")
+  library(readxl)
+}
+```
+
+```{r, echo=FALSE}
+source("./Utility Notebooks/loadData.r")
+tokenInfo <- reserveParamsHistory %>%
+  mutate(datetime = as_datetime(timestamp)) 
+
+tokenInfo
+
+tokens <- reserveInfo %>%
+  mutate(reserve = symbol)
+
+tokenDecimals <- tokens %>%
+  select(reserve, decimals)
+
+tokenInfo <- tokenInfo %>%
+  mutate(reserve = symbol, totalLiquidity = totalLiquidity / 10^decimals, availableLiquidity = availableLiquidity / 10^decimals, totalLiquidityAsCollateral = totalLiquidityAsCollateral/10^decimals) 
+  
+tokenInfo <- tokenInfo %>%
+  mutate(day = ceiling_date(datetime, unit="day")) %>%
+  group_by(reserve, day) %>%
+  slice_max(timestamp) %>%
+  ungroup() %>%
+  group_by(reserve) %>%
+  arrange(timestamp) %>%
+  mutate(previousPriceUsd = lag(priceInUsd)) %>%
+  mutate(percentChangeInPrice = (priceInUsd/previousPriceUsd) - 1)
+
+topBorrowableTokens <- tokenInfo %>%
+  group_by(reserve) %>%
+  summarize(count = n()) %>%
+  left_join(tokens, by = "reserve") %>%
+  select(reserve, borrowingEnabled, usageAsCollateralEnabled, count) %>%
+  arrange(-count) %>%
+  filter(borrowingEnabled == TRUE) %>%
+  filter(reserve %in% nonStableCoins$reserve) 
+
+totalBorrowedLiquidities <- tokenInfo %>%
+  filter(reserve %in% topBorrowableTokens$reserve) %>%
+  mutate(totalBorrowed = totalLiquidity - availableLiquidity) %>%
+  group_by(day) %>%
+  summarize(totalBorrowedLiquidity = sum(totalBorrowed))
+
+borrowedTokenInfo <- tokenInfo %>%
+  filter(reserve %in% topBorrowableTokens$reserve) %>%
+  left_join(totalBorrowedLiquidities, by = "day") %>%
+  mutate(liquidityImportance = (totalLiquidity - availableLiquidity) / totalBorrowedLiquidity) %>%
+  mutate(reserveMarketShockFactor = percentChangeInPrice * liquidityImportance)
+
+marketShockFactorsBorrows <- borrowedTokenInfo %>%
+  group_by(day) %>%
+  summarize(marketShockFactor = sum(reserveMarketShockFactor)) %>%
+  filter(day >= "2021-01-01 00:00:00") %>%
+  filter(day <= "2022-03-01 00:00:00")
+
+marketShockFactorsBorrows <- na.omit(marketShockFactorsBorrows)
+
+borrowsMSPlot <- ggplotly(ggplot(marketShockFactorsBorrows, aes(day, marketShockFactor)) + geom_line() +geom_hline(aes(yintercept = -.13)) + ggtitle("Market Shock Factor for Borrowed Assets") + ylab("Market Shock Factor") + xlab("Day"))
+
+ggplotly(borrowsMSPlot)
+
+```
+
+```{r}
+topCollateralTokens <- tokenInfo %>%
+  group_by(reserve) %>%
+  summarize(count = n()) %>%
+  left_join(tokens, by = "reserve")%>%
+  select(reserve, borrowingEnabled, usageAsCollateralEnabled, count) %>%
+  arrange(-count) %>%
+  filter(usageAsCollateralEnabled == TRUE) %>%
+  filter(reserve %in% nonStableCoins$reserve) 
+
+totalCollateralLiquidities <- tokenInfo %>%
+  filter(reserve %in% topCollateralTokens$reserve) %>%
+  group_by(day) %>%
+  summarize(totalCollateralLiquidity = sum(totalLiquidityAsCollateral))
+
+collateralTokenInfo <- tokenInfo %>%
+  filter(reserve %in% topCollateralTokens$reserve) %>%
+  left_join(totalCollateralLiquidities, by = "day") %>%
+  mutate(liquidityImportance = totalLiquidityAsCollateral / totalCollateralLiquidity) %>%
+  mutate(reserveMarketShockFactor = percentChangeInPrice * liquidityImportance)
+
+marketShockFactorsCollateral <- collateralTokenInfo %>%
+  group_by(day) %>%
+  summarize(marketShockFactor = sum(reserveMarketShockFactor)) %>%
+  filter(day >= "2021-01-01 00:00:00")%>%
+  filter(day <= "2022-03-01 00:00:00")
+
+marketShockFactorsCollateral <- na.omit(marketShockFactorsCollateral)
+
+collateralsMSPlot <- ggplot(marketShockFactorsCollateral, aes(day, marketShockFactor)) + geom_line() +geom_hline(aes(yintercept = -.13)) + ggtitle("Market Shock Factor for Collateral Assets") + ylab("Market Shock Factor") + xlab("Day")
+
+collateralsMSPlot
+```
+
+```{r}
+liquidationsOverTime <- liquidations %>%
+  drop_na() %>%
+  mutate(day = ceiling_date(as_datetime(timestamp), unit = "day")) %>%
+  filter(day >= "2021-01-01 00:00:00") %>%
+  filter(day <= "2022-03-01 00:00:00") %>%
+  group_by(day) %>%
+  summarize(count = n(), principalLiquidated = sum(amountUSDPrincipal), collateralLiquidated = sum(amountUSDCollateral)) %>%
+  mutate(profit = collateralLiquidated - principalLiquidated)
+
+dfp <- df %>% filter(type == "liquidation") %>%
+  mutate(day = ceiling_date(as_datetime(timestamp), unit = "day")) %>%
+  filter(day >= "2021-01-01 00:00:00") %>%
+  filter(day <= "2022-03-01 00:00:00")
+
+dfp <- df %>%
+  filter(type == "liquidation") %>% filter(timestamp == "1619143917")
+
+liquidationsPlot <- ggplot(liquidationsOverTime, aes(day, profit)) + geom_point()
+#liquidationsPlot
+
+```
+
+```{r}
+shockThreshold <- -0.13
+
+
+#Principal
+
+r <- 100000000
+
+colors <- c("Principal" = "black", "Market Shock Factor" = "red", "Market Shock Threshold" = "blue")
+
+stackedPlot1 <- ggplot() + geom_line(data = liquidationsOverTime, mapping = aes(x=day, y=principalLiquidated, color = "Principal")) + geom_line(data = marketShockFactorsCollateral, mapping = aes(x = day, y = marketShockFactor*r, color = "Market Shock Factor")) +
+  scale_y_continuous(name = "Amount of principal liquidated per day (USD)", 
+    sec.axis = sec_axis(~./r, name = "Market Shock Factor")) + geom_hline(aes(yintercept = shockThreshold * r, color = "Market Shock Threshold")) + labs(color = "Legend") + scale_color_manual(values = colors)
+
+ggplotly(stackedPlot1)
+
+
+#Collateral
+
+r <- 100000000
+
+colors2 <- c("Collateral" = "black", "Market Shock Factor" = "red", "Market Shock Threshold" = "blue")
+
+stackedPlot2 <- ggplot() + geom_line(data = liquidationsOverTime, mapping = aes(x=day, y=collateralLiquidated, color = "Collateral")) + geom_line(data = marketShockFactorsCollateral, mapping = aes(x = day, y = marketShockFactor*r, color = "Market Shock Factor")) +
+  scale_y_continuous(name = "Amount of collateral claimed from liquidations per day (USD)", 
+    sec.axis = sec_axis(~./r, name = "Market Shock Factor")) + geom_hline(aes(yintercept = shockThreshold * r, color = "Market Shock Threshold")) + labs(color = "Legend") + scale_color_manual(values = colors2)
+
+#ggplotly(stackedPlot2)
+
+#Profit
+
+r <- 10000000
+
+colors3 <- c("Profit" = "black", "Market Shock Factor" = "red", "Market Shock Threshold" = "blue")
+
+stackedPlot3 <- ggplot() + geom_line(data = liquidationsOverTime, mapping = aes(x=day, y=profit, color = "Profit")) + geom_line(data = marketShockFactorsCollateral, mapping = aes(x = day, y = marketShockFactor*r,color = "Market Shock Factor")) +
+  scale_y_continuous(name = "Profit from liqudiations per day (USD)", 
+    sec.axis = sec_axis(~./r, name = "Market Shock Factor")) + geom_hline(aes(yintercept = shockThreshold * r, color = "Market Shock Threshold")) + labs(color = "Legend") + scale_color_manual(values = colors3)
+
+
+#ggplotly(stackedPlot3)
+
+#Count
+
+r <- 1000
+
+colors <- c("Number of Liquidations" = "black", "Market Shock Factor" = "red", "Market Shock Threshold" = "blue")
+
+stackedPlot4 <- ggplot() + geom_line(data = liquidationsOverTime, mapping = aes(x=day, y=count, color = "Number of Liquidations")) + geom_line(data = marketShockFactorsCollateral, mapping = aes(x = day, y = marketShockFactor*r, color = "Market Shock Factor")) +
+  scale_y_continuous(name = "Number of liquidations per day", 
+    sec.axis = sec_axis(~./r, name = "Market Shock Factor")) + geom_hline(aes(yintercept = shockThreshold * r, color = "Market Shock Threshold")) + labs(color = "Legend") + scale_color_manual(values = colors)
+
+#ggplotly(stackedPlot4)
+
+```
+
+```{r}
+ggplotly(stackedPlot1)
+```
+```{r}
+#dfGas <- read_csv("./Data/avg_gas.csv")
+#dfGas
+```
+
+```{r}
+shockThreshold = -0.13
+
+liquidationsOverTime <-  liquidationsOverTime %>% mutate(cum_profit = cumsum(profit))
+
+marketShockWithLiquidations13 <- merge( x = liquidationsOverTime, y = marketShockFactorsCollateral, by="day")
+
+marketShockDays13 <- marketShockWithLiquidations13 %>% filter (marketShockFactor < shockThreshold)
+
+marketShockDays13
+
+#Principal
+
+r <- 100000000
+
+colors <- c("Profit" = "black", "Market Shock Days" = "red")
+#, "Market Shock Threshold" = "blue")
+
+cummulativePlot1 <- ggplot() + geom_line(data = liquidationsOverTime, mapping = aes(x=day, y=cum_profit, color = "Profit")) + geom_point(data = marketShockDays13, mapping = aes(x = day, y = cum_profit, color = "Market Shock Days")) +
+  scale_y_continuous(name = "Acculumative profit from liquidations(USD)", 
+    sec.axis = sec_axis(~./r, name = "Market Shock Dyas")) + labs(title = " Market Shock Factor = -0.13", color = "Legend") + scale_color_manual(values = colors)
+# + geom_hline(aes(yintercept = shockThreshold * r, color = "Market Shock Threshold"))
+
+ggplotly(cummulativePlot1)
+
+#plot 2
+
+shockThreshold = -0.10
+
+marketShockWithLiquidations10 <- merge( x = liquidationsOverTime, y = marketShockFactorsCollateral, by="day")
+
+marketShockDays10 <- marketShockWithLiquidations10 %>% filter (marketShockFactor < shockThreshold)
+
+marketShockDays10 
+
+r <- 100000000
+
+colors <- c("Profit" = "black", "Market Shock Days" = "red")
+#, "Market Shock Threshold" = "blue")
+
+cummulativePlot2 <- ggplot() + geom_line(data = liquidationsOverTime, mapping = aes(x=day, y=cum_profit, color = "Profit")) + geom_point(data = marketShockDays10, mapping = aes(x = day, y = cum_profit, color = "Market Shock Days")) +
+  scale_y_continuous(name = "Acculumative profit from liquidations(USD)", 
+    sec.axis = sec_axis(~./r, name = "Market Shock Dyas")) + labs(title = " Market Shock Factor = -0.10", color = "Legend") + scale_color_manual(values = colors)
+# + geom_hline(aes(yintercept = shockThreshold * r, color = "Market Shock Threshold"))
+
+ggplotly(cummulativePlot2)
+
+#plot 3
+
+shockThreshold = -0.08
+
+marketShockWithLiquidations8 <- merge( x = liquidationsOverTime, y = marketShockFactorsCollateral, by="day")
+
+marketShockDays8 <- marketShockWithLiquidations %>% filter (marketShockFactor < shockThreshold)
+
+marketShockDays8 
+
+r <- 100000000
+
+colors <- c("Profit" = "black", "Market Shock Days" = "red")
+#, "Market Shock Threshold" = "blue")
+
+cummulativePlot3 <- ggplot() + geom_line(data = liquidationsOverTime, mapping = aes(x=day, y=cum_profit, color = "Profit")) + geom_point(data = marketShockDays8, mapping = aes(x = day, y = cum_profit, color = "Market Shock Days")) +
+  scale_y_continuous(name = "Acculumative profit from liquidations(USD)", 
+    sec.axis = sec_axis(~./r, name = "Market Shock Dyas")) + labs(title = " Market Shock Factor = -0.08", color = "Legend") + scale_color_manual(values = colors)
+# + geom_hline(aes(yintercept = shockThreshold * r, color = "Market Shock Threshold"))
+
+ggplotly(cummulativePlot3)
+
+```
+
+
+```{r}
+total_profits8 <-  sum(marketShockDays8$profit)
+total_profits10 <- sum(marketShockDays10$profit)
+total_profits13 <- sum(marketShockDays13$profit)
+total_profits_overall <- sum(liquidationsOverTime$profit)
+
+total_profits8
+total_profits10
+total_profits13
+total_profits_overall
+
+total_profits8/total_profits_overall
+total_profits10/total_profits_overall
+total_profits13/total_profits_overall
+```
+
+```{r}
+shockThreshold = -0.08
+
+liquidationsOverTime <- liquidationsOverTime %>% mutate(CollatPrincRatio = collateralLiquidated/principalLiquidated)
+
+marketShockWithLiquidations8 <- merge( x = liquidationsOverTime, y = marketShockFactorsCollateral, by="day")
+
+marketShockDays8 <- marketShockWithLiquidations8 %>% filter (marketShockFactor < shockThreshold)
+
+collatPrincPlot <- ggplot() + geom_line(data = liquidationsOverTime, mapping = aes(x = day, y=CollatPrincRatio)) + geom_hline(yintercept = 1.0, color = "blue") + geom_point(data = marketShockDays8, mapping = aes(x = day, y = CollatPrincRatio, color = "red")) + labs(title = "Collateral/Principal Ratio over time, Market Shock Threshold = -0.08")
+
+ggplotly(collatPrincPlot)
+
+shockThreshold = -0.10
+
+liquidationsOverTime <- liquidationsOverTime %>% mutate(CollatPrincRatio = collateralLiquidated/principalLiquidated)
+
+marketShockWithLiquidations10 <- merge( x = liquidationsOverTime, y = marketShockFactorsCollateral, by="day")
+
+marketShockDays10 <- marketShockWithLiquidations10 %>% filter (marketShockFactor < shockThreshold)
+
+collatPrincPlot2 <- ggplot() + geom_line(data = liquidationsOverTime, mapping = aes(x = day, y=CollatPrincRatio)) + geom_hline(yintercept = 1.0, color = "blue") + geom_point(data = marketShockDays10, mapping = aes(x = day, y = CollatPrincRatio, color = "red")) + labs(title = "Collateral/Principal Ratio over time, Market Shock Threshold = -0.10")
+
+ggplotly(collatPrincPlot2)
+
+shockThreshold = -0.13
+
+liquidationsOverTime <- liquidationsOverTime %>% mutate(CollatPrincRatio = collateralLiquidated/principalLiquidated)
+
+marketShockWithLiquidations13 <- merge( x = liquidationsOverTime, y = marketShockFactorsCollateral, by="day")
+
+marketShockDays13 <- marketShockWithLiquidations13 %>% filter (marketShockFactor < shockThreshold)
+
+collatPrincPlot3 <- ggplot() + geom_line(data = liquidationsOverTime, mapping = aes(x = day, y=CollatPrincRatio)) + geom_hline(yintercept = 1.0, color = "blue") + geom_point(data = marketShockDays13, mapping = aes(x = day, y = CollatPrincRatio, color = "red")) + labs(title = "Collateral/Principal Ratio over time, Market Shock Threshold = -0.13")
+
+ggplotly(collatPrincPlot3)
+
+
+
+```
